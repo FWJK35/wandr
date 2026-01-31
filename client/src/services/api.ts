@@ -1,0 +1,316 @@
+import axios from 'axios';
+import type {
+  User,
+  Business,
+  CheckIn,
+  Zone,
+  Quest,
+  Badge,
+  FeedItem,
+  Reward,
+  Redemption,
+  LeaderboardEntry,
+  UserStats,
+  PointsBreakdown,
+  Comment
+} from '../types';
+
+const api = axios.create({
+  baseURL: '/api',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Add auth token to requests
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('wandr_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Handle auth errors
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('wandr_token');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
+// Auth API
+export const authApi = {
+  register: async (data: { email: string; username: string; password: string }) => {
+    const res = await api.post<{ user: User; token: string }>('/auth/register', data);
+    return res.data;
+  },
+
+  login: async (data: { email: string; password: string }) => {
+    const res = await api.post<{ user: User; token: string }>('/auth/login', data);
+    return res.data;
+  },
+
+  logout: async () => {
+    await api.post('/auth/logout');
+  },
+
+  getMe: async () => {
+    const res = await api.get<User>('/auth/me');
+    return res.data;
+  },
+};
+
+// Users API
+export const usersApi = {
+  getUser: async (id: string) => {
+    const res = await api.get<User & { stats: UserStats }>(`/users/${id}`);
+    return res.data;
+  },
+
+  getBadges: async (userId: string) => {
+    const res = await api.get<Badge[]>(`/users/${userId}/badges`);
+    return res.data;
+  },
+
+  getLeaderboard: async (type: 'all-time' | 'weekly' | 'monthly' = 'all-time') => {
+    const res = await api.get<LeaderboardEntry[]>(`/users/leaderboard/all?type=${type}`);
+    return res.data;
+  },
+
+  updateProfile: async (data: { displayName?: string; avatarUrl?: string }) => {
+    const res = await api.put('/users/me', data);
+    return res.data;
+  },
+};
+
+// Businesses API
+export const businessesApi = {
+  getNearby: async (lat: number, lng: number, radius = 1000, category?: string) => {
+    const params = new URLSearchParams({
+      lat: lat.toString(),
+      lng: lng.toString(),
+      radius: radius.toString(),
+    });
+    if (category) params.append('category', category);
+    const res = await api.get<Business[]>(`/businesses?${params}`);
+    return res.data;
+  },
+
+  getById: async (id: string) => {
+    const res = await api.get<Business & {
+      stats: { totalCheckins: number; uniqueVisitors: number };
+      promotions: any[];
+      challenges: any[];
+      visited: boolean;
+      lastVisit?: string;
+    }>(`/businesses/${id}`);
+    return res.data;
+  },
+
+  getCategories: async () => {
+    const res = await api.get<{ name: string; count: number }[]>('/businesses/meta/categories');
+    return res.data;
+  },
+};
+
+// Check-ins API
+export const checkinsApi = {
+  create: async (data: { businessId: string; latitude: number; longitude: number; friendIds?: string[] }) => {
+    const res = await api.post<{
+      id: string;
+      businessId: string;
+      businessName: string;
+      points: PointsBreakdown;
+      isFirstVisit: boolean;
+      zoneProgress?: {
+        zoneId: string;
+        zoneName: string;
+        visited: number;
+        total: number;
+        captureThreshold: number;
+        captured: boolean;
+      };
+    }>('/checkins', data);
+    return res.data;
+  },
+
+  getHistory: async (limit = 20, offset = 0) => {
+    const res = await api.get<CheckIn[]>(`/checkins/history?limit=${limit}&offset=${offset}`);
+    return res.data;
+  },
+
+  getStats: async () => {
+    const res = await api.get<UserStats>('/checkins/stats');
+    return res.data;
+  },
+};
+
+// Zones API
+export const zonesApi = {
+  getInViewport: async (bounds: { minLat: number; maxLat: number; minLng: number; maxLng: number }) => {
+    const params = new URLSearchParams({
+      minLat: bounds.minLat.toString(),
+      maxLat: bounds.maxLat.toString(),
+      minLng: bounds.minLng.toString(),
+      maxLng: bounds.maxLng.toString(),
+    });
+    const res = await api.get<Zone[]>(`/zones?${params}`);
+    return res.data;
+  },
+
+  getById: async (id: string) => {
+    const res = await api.get<Zone & {
+      businesses: Business[];
+      leaderboard: LeaderboardEntry[];
+    }>(`/zones/${id}`);
+    return res.data;
+  },
+
+  getLeaderboard: async () => {
+    const res = await api.get<LeaderboardEntry[]>('/zones/stats/leaderboard');
+    return res.data;
+  },
+};
+
+// Quests API
+export const questsApi = {
+  getAvailable: async () => {
+    const res = await api.get<Quest[]>('/quests');
+    return res.data;
+  },
+
+  getActive: async () => {
+    const res = await api.get<Quest[]>('/quests/active');
+    return res.data;
+  },
+
+  getCompleted: async () => {
+    const res = await api.get<Quest[]>('/quests/completed');
+    return res.data;
+  },
+
+  start: async (questId: string) => {
+    const res = await api.post<{ id: string; questId: string; progress: any }>(`/quests/${questId}/start`);
+    return res.data;
+  },
+
+  checkProgress: async (userQuestId: string) => {
+    const res = await api.post<{
+      completed: boolean;
+      progress: any;
+      pointsEarned?: number;
+      badgeEarned?: string;
+    }>(`/quests/${userQuestId}/check`);
+    return res.data;
+  },
+};
+
+// Social API
+export const socialApi = {
+  getFeed: async (type: 'all' | 'friends' | 'following' = 'all', limit = 20, offset = 0) => {
+    const res = await api.get<FeedItem[]>(`/social/feed?type=${type}&limit=${limit}&offset=${offset}`);
+    return res.data;
+  },
+
+  likeFeedItem: async (feedItemId: string) => {
+    const res = await api.post<{ liked: boolean }>(`/social/feed/${feedItemId}/like`);
+    return res.data;
+  },
+
+  getComments: async (feedItemId: string) => {
+    const res = await api.get<Comment[]>(`/social/feed/${feedItemId}/comments`);
+    return res.data;
+  },
+
+  addComment: async (feedItemId: string, content: string) => {
+    const res = await api.post<{ id: string; content: string }>(`/social/feed/${feedItemId}/comment`, { content });
+    return res.data;
+  },
+
+  getFriends: async () => {
+    const res = await api.get<any[]>('/social/friends');
+    return res.data;
+  },
+
+  getPendingRequests: async () => {
+    const res = await api.get<any[]>('/social/friends/pending');
+    return res.data;
+  },
+
+  sendFriendRequest: async (userId: string) => {
+    const res = await api.post('/social/friends/request', { userId });
+    return res.data;
+  },
+
+  acceptFriendRequest: async (friendshipId: string) => {
+    const res = await api.post(`/social/friends/${friendshipId}/accept`);
+    return res.data;
+  },
+
+  removeFriend: async (friendshipId: string) => {
+    const res = await api.delete(`/social/friends/${friendshipId}`);
+    return res.data;
+  },
+
+  follow: async (userId: string) => {
+    const res = await api.post('/social/follow', { userId });
+    return res.data;
+  },
+
+  unfollow: async (userId: string) => {
+    const res = await api.delete(`/social/follow/${userId}`);
+    return res.data;
+  },
+
+  getFollowers: async () => {
+    const res = await api.get<any[]>('/social/followers');
+    return res.data;
+  },
+
+  getFollowing: async () => {
+    const res = await api.get<any[]>('/social/following');
+    return res.data;
+  },
+};
+
+// Rewards API
+export const rewardsApi = {
+  getAvailable: async (lat?: number, lng?: number, radius = 5000) => {
+    const params = new URLSearchParams();
+    if (lat !== undefined && lng !== undefined) {
+      params.append('lat', lat.toString());
+      params.append('lng', lng.toString());
+      params.append('radius', radius.toString());
+    }
+    const res = await api.get<Reward[]>(`/rewards?${params}`);
+    return res.data;
+  },
+
+  getById: async (id: string) => {
+    const res = await api.get<Reward>(`/rewards/${id}`);
+    return res.data;
+  },
+
+  redeem: async (rewardId: string) => {
+    const res = await api.post<{
+      redemptionId: string;
+      redemptionCode: string;
+      reward: { id: string; title: string };
+      pointsSpent: number;
+    }>(`/rewards/${rewardId}/redeem`);
+    return res.data;
+  },
+
+  getRedemptions: async (status?: 'pending' | 'used' | 'expired') => {
+    const params = status ? `?status=${status}` : '';
+    const res = await api.get<Redemption[]>(`/rewards/user/redemptions${params}`);
+    return res.data;
+  },
+};
+
+export default api;

@@ -1,0 +1,161 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary: #22c55e;
+  --color-primary-dark: #16a34a;
+  --color-accent: #d946ef;
+  --color-dark-100: #1e1e2e;
+  --color-dark-200: #181825;
+  --color-dark-300: #11111b;
+  --color-dark-400: #0a0a0f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: var(--color-dark-300);
+  color: #ffffff;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-dark-200);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-dark-100);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2a2a3e;
+}
+
+/* Map container styling */
+.map-container {
+  width: 100%;
+  height: 100%;
+}
+
+/* Marker animations */
+@keyframes marker-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.7;
+  }
+}
+
+.marker-pulse {
+  animation: marker-pulse 2s ease-in-out infinite;
+}
+
+/* User marker glow */
+.user-marker {
+  position: relative;
+}
+
+.user-marker::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 40px;
+  background: radial-gradient(circle, rgba(34, 197, 94, 0.4) 0%, transparent 70%);
+  border-radius: 50%;
+  animation: marker-pulse 2s ease-in-out infinite;
+}
+
+/* Glass morphism effect */
+.glass {
+  background: rgba(30, 30, 46, 0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Button styles */
+.btn-primary {
+  @apply bg-primary-500 hover:bg-primary-600 text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200;
+}
+
+.btn-secondary {
+  @apply bg-dark-100 hover:bg-dark-200 text-white font-semibold py-2 px-4 rounded-lg border border-white/10 transition-all duration-200;
+}
+
+/* Card styles */
+.card {
+  @apply bg-dark-100 rounded-xl p-4 border border-white/5;
+}
+
+/* Input styles */
+.input {
+  @apply bg-dark-200 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-colors;
+}
+
+/* Badge styles */
+.badge {
+  @apply inline-flex items-center px-2 py-1 rounded-full text-xs font-medium;
+}
+
+.badge-success {
+  @apply bg-primary-500/20 text-primary-400;
+}
+
+.badge-warning {
+  @apply bg-yellow-500/20 text-yellow-400;
+}
+
+.badge-info {
+  @apply bg-blue-500/20 text-blue-400;
+}
+
+/* Tooltip */
+.tooltip {
+  @apply absolute z-50 px-2 py-1 text-xs bg-dark-100 rounded shadow-lg border border-white/10;
+}
+
+/* Loading spinner */
+.spinner {
+  @apply w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin;
+}
+
+/* Zone overlay styles */
+.zone-captured {
+  fill: rgba(34, 197, 94, 0.2);
+  stroke: rgba(34, 197, 94, 0.6);
+  stroke-width: 2;
+}
+
+.zone-uncaptured {
+  fill: rgba(100, 100, 100, 0.3);
+  stroke: rgba(150, 150, 150, 0.4);
+  stroke-width: 1;
+}
+
+/* Fog of war effect */
+.fog-overlay {
+  pointer-events: none;
+}
