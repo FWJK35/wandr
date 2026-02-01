@@ -21,6 +21,7 @@ export default function Rewards() {
   const [redeeming, setRedeeming] = useState(false);
   const [redeemResult, setRedeemResult] = useState<{
     redemptionCode: string;
+    pointsSpent: number;
   } | null>(null);
 
   useEffect(() => {
@@ -55,7 +56,11 @@ export default function Rewards() {
       const result = await rewardsApi.redeem(reward.id);
       setRedeemResult({
         redemptionCode: result.redemptionCode,
+        pointsSpent: result.pointsSpent,
       });
+      if (user) {
+        updateUser({ points: Math.max(user.points - result.pointsSpent, 0) });
+      }
     } catch (err: any) {
       alert(err.response?.data?.error || 'Failed to redeem');
     } finally {
