@@ -18,14 +18,12 @@ interface GoogleMapsTextureProps {
 
 export default function GoogleMapsTexture({ apiKey, mapType = 'hybrid' }: GoogleMapsTextureProps) {
   const [mainTexture, setMainTexture] = useState<THREE.Texture | null>(null);
-  const [loading, setLoading] = useState(true);
   const meshRef = useRef<THREE.Mesh>(null);
 
   useEffect(() => {
     async function loadMainMap() {
       if (!apiKey) {
         console.warn('Google Maps API key not provided');
-        setLoading(false);
         return;
       }
 
@@ -62,7 +60,7 @@ export default function GoogleMapsTexture({ apiKey, mapType = 'hybrid' }: Google
         const texture = await new Promise<THREE.Texture>((resolve, reject) => {
           loader.load(
             imageUrl,
-            (loadedTexture) => {
+            (loadedTexture: THREE.Texture) => {
               loadedTexture.flipY = false;
               loadedTexture.wrapS = THREE.ClampToEdgeWrapping;
               loadedTexture.wrapT = THREE.ClampToEdgeWrapping;
@@ -72,7 +70,7 @@ export default function GoogleMapsTexture({ apiKey, mapType = 'hybrid' }: Google
               resolve(loadedTexture);
             },
             undefined,
-            (error) => {
+            (error: unknown) => {
               console.error('Failed to load Google Maps texture:', error);
               reject(error);
             }
@@ -81,10 +79,8 @@ export default function GoogleMapsTexture({ apiKey, mapType = 'hybrid' }: Google
 
         URL.revokeObjectURL(imageUrl);
         setMainTexture(texture);
-        setLoading(false);
       } catch (error) {
         console.error('Error loading Google Maps texture:', error);
-        setLoading(false);
       }
     }
 

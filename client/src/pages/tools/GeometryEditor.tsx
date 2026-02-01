@@ -181,6 +181,7 @@ export default function GeometryEditor() {
   const neighborhoodFillLayer: FillLayer = useMemo(() => ({
     id: 'editor-hood-fill',
     type: 'fill',
+    source: 'editor-neighborhoods',
     paint: {
       'fill-color': '#10b981',
       'fill-opacity': 0.08,
@@ -190,6 +191,7 @@ export default function GeometryEditor() {
   const neighborhoodLineLayer: LineLayer = useMemo(() => ({
     id: 'editor-hood-line',
     type: 'line',
+    source: 'editor-neighborhoods',
     paint: {
       'line-color': '#34d399',
       'line-width': 1.5,
@@ -256,7 +258,7 @@ export default function GeometryEditor() {
         zoneData.map((z: Zone) => ({
           id: z.id,
           name: z.name,
-          neighborhoodName: z.neighborhoodName,
+          neighborhoodName: z.neighborhoodName ?? undefined,
           coords: closePolygon(z.boundary.coordinates[0] as [number, number][]),
           captured: z.captured,
         }))
@@ -806,6 +808,13 @@ export default function GeometryEditor() {
           </>
         )}
       </Map>
+      {hoodsError && (
+        <div className="absolute top-24 left-4 right-4 z-10">
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 text-sm text-amber-200">
+            {hoodsError}
+          </div>
+        </div>
+      )}
 
       <div className="absolute top-4 left-4 w-80 glass rounded-2xl p-4 space-y-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
         <div className="flex items-center justify-between">

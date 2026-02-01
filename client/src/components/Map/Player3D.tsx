@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
+import type { RootState } from '@react-three/fiber';
 import * as THREE from 'three';
 
 interface Player3DProps {
@@ -10,7 +11,7 @@ export default function Player3D({ position }: Player3DProps) {
   const groupRef = useRef<THREE.Group>(null);
 
   // Subtle idle animation
-  useFrame((state) => {
+  useFrame((state: RootState) => {
     if (groupRef.current) {
       // Slight bobbing motion
       groupRef.current.position.y = position[1] + Math.sin(state.clock.elapsedTime * 2) * 0.1;

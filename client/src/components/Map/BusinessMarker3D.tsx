@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
+import type { RootState } from '@react-three/fiber';
 import { Text } from '@react-three/drei';
 import type { Business } from '../../types';
 import { latLngToWorld } from '../../utils/coordinates';
@@ -10,26 +11,13 @@ interface BusinessMarker3DProps {
   onClick: () => void;
 }
 
-const categoryIcons: Record<string, string> = {
-  'Cafe': '☕',
-  'Restaurant': '🍽️',
-  'Bar': '🍺',
-  'Shop': '🛍️',
-  'Museum': '🏛️',
-  'Gym': '💪',
-  'Entertainment': '🎮',
-  'Park': '🌳',
-  'default': '🏢',
-};
-
 export default function BusinessMarker3D({ business, onClick }: BusinessMarker3DProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const [hovered, setHovered] = useState(false);
   const worldPos = latLngToWorld(business.latitude, business.longitude);
-  const icon = categoryIcons[business.category] || categoryIcons.default;
 
   // Floating animation
-  useFrame((state) => {
+  useFrame((state: RootState) => {
     if (meshRef.current) {
       meshRef.current.position.y = 2 + Math.sin(state.clock.elapsedTime * 2) * 0.3;
       meshRef.current.rotation.y = state.clock.elapsedTime * 0.5;

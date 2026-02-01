@@ -5,6 +5,7 @@ import type {
   CheckIn,
   Zone,
   Quest,
+  GeneratedQuest,
   Badge,
   Landmark,
   FeedItem,
@@ -313,19 +314,7 @@ export const questsApi = {
   },
 
   getGeneratedActive: async () => {
-    const res = await api.get<{
-      quest_id: string;
-      business_id: string;
-      type: string;
-      title: string;
-      short_prompt: string;
-      points: number;
-      suggested_percent_off?: number | null;
-      safety_note?: string | null;
-      starts_at: string;
-      ends_at: string;
-      is_landmark?: boolean;
-    }[]>(`/quests/active`);
+    const res = await api.get<GeneratedQuest[]>(`/quests/active`);
     return res.data;
   },
 };

@@ -33,15 +33,9 @@ export default function ZoneOverlay3D({ zone }: ZoneOverlay3DProps) {
     return { shape, vertices };
   }, [zone.boundary]);
 
-  const progress = zone.totalLocations > 0
-    ? zone.visited / zone.totalLocations
-    : 0;
-
-  // Color based on progress
+  // Color based on capture status
   const fillColor = zone.captured
     ? '#06b6d4' // Cyan for captured
-    : progress > 0.3
-    ? '#f59e0b' // Orange for in-progress
     : '#6b7280'; // Gray for uncaptured
 
   const opacity = zone.captured ? 0.3 : 0.15;
@@ -60,7 +54,7 @@ export default function ZoneOverlay3D({ zone }: ZoneOverlay3DProps) {
       </mesh>
 
       {/* Zone border line */}
-      <line position={[0, 0.11, 0]}>
+      <lineSegments position={[0, 0.11, 0]}>
         <bufferGeometry>
           <bufferAttribute
             attach="attributes-position"
@@ -73,7 +67,7 @@ export default function ZoneOverlay3D({ zone }: ZoneOverlay3DProps) {
           color={zone.captured ? '#06b6d4' : '#9ca3af'}
           linewidth={2}
         />
-      </line>
+      </lineSegments>
     </group>
   );
 }
