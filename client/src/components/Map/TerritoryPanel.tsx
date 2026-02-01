@@ -5,8 +5,6 @@ interface TerritoryPanelProps {
   zones: Zone[];
 }
 
-const NEIGHBORHOOD_BONUS_POINTS = 50;
-
 export default function TerritoryPanel({ zones }: TerritoryPanelProps) {
   const [expanded, setExpanded] = useState(false);
   const zonesByNeighborhood = new Map<string, Zone[]>();
@@ -130,16 +128,6 @@ export default function TerritoryPanel({ zones }: TerritoryPanelProps) {
                   ))}
                 </div>
 
-                {/* Bonus points indicator */}
-                {neighborhood.fullyCaptured ? (
-                  <div className="mt-2 text-xs text-green-400 flex items-center gap-1">
-                    <span>✨</span> +{NEIGHBORHOOD_BONUS_POINTS} bonus points earned!
-                  </div>
-                ) : (
-                  <div className="mt-2 text-xs text-gray-500">
-                    Capture all zones for +{NEIGHBORHOOD_BONUS_POINTS} bonus points
-                  </div>
-                )}
               </div>
             ))}
 

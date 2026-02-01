@@ -110,7 +110,7 @@ export default function LandmarkPanel({ landmark, userLocation, onClose }: Landm
                 <span className="font-semibold text-primary-400">Check-in Successful!</span>
               </div>
               <div className="text-gray-300">
-                +{checkinResult.points.total} points
+                Landmark check-in complete
               </div>
             </div>
           )}

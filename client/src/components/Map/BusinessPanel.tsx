@@ -248,7 +248,7 @@ export default function BusinessPanel({ business, userLocation, activeQuest, onC
                     <div key={quest.questId} className="flex items-center gap-2 text-sm">
                       <span className="text-purple-300">🎯</span>
                       <span className="text-purple-200">
-                        Quest Complete{quest.questTitle ? `: ${quest.questTitle}` : ''} (+{quest.pointsEarned})
+                        Quest Complete{quest.questTitle ? `: ${quest.questTitle}` : ''}
                       </span>
                     </div>
                   ))}
@@ -306,7 +306,6 @@ export default function BusinessPanel({ business, userLocation, activeQuest, onC
                       <div className="flex items-center gap-2">
                         <span className="text-yellow-400">⚡</span>
                         <span className="text-sm font-medium">{promo.title}</span>
-                        <span className="ml-auto text-xs text-yellow-400">+{promo.bonusPoints} pts</span>
                       </div>
                     </div>
                   ))}

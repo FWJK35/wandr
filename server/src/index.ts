@@ -19,7 +19,14 @@ loadEnv();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const clientDistPath = path.resolve(process.cwd(), 'client', 'dist');
+const clientDistCandidates = [
+  process.env.CLIENT_DIST,
+  path.resolve(process.cwd(), 'client', 'dist'),
+  path.resolve(process.cwd(), '..', 'client', 'dist'),
+  path.resolve(__dirname, '..', '..', 'client', 'dist'),
+  path.resolve(__dirname, '..', 'client', 'dist'),
+].filter((p): p is string => !!p);
+const clientDistPath = clientDistCandidates.find((p) => fs.existsSync(p));
 
 // Middleware
 app.use(cors({
@@ -28,8 +35,10 @@ app.use(cors({
 }));
 app.use(express.json());
 
-if (fs.existsSync(clientDistPath)) {
+if (clientDistPath) {
   app.use(express.static(clientDistPath));
+} else {
+  console.warn('⚠️ Client dist not found; static frontend will not be served.');
 }
 
 // Health check
@@ -50,7 +59,7 @@ app.use('/api/business-dashboard', businessDashboardRouter);
 app.use('/api/payments', paymentsRouter);
 app.use('/api/landmarks', landmarksRouter);
 
-if (fs.existsSync(clientDistPath)) {
+if (clientDistPath) {
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api')) {
       return next();

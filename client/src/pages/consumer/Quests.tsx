@@ -369,7 +369,7 @@ function handleClaimGenerated(gq: GeneratedQuest) {
                     </Card>
                   ))}
                   {completed.map((quest) => (
-                    <QuestCard key={quest.id} quest={quest} completed hidePoints />
+                    <QuestCard key={quest.id} quest={quest} completed />
                   ))}
                 </>
               )}

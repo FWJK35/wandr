@@ -112,7 +112,6 @@ export default function Rewards() {
               <RewardCard
                 key={reward.id}
                 reward={reward}
-                userPoints={user?.points || 0}
                 onClick={() => setSelectedReward(reward)}
               />
             ))}
@@ -195,10 +194,6 @@ export default function Rewards() {
               </p>
             </div>
 
-            <p className="text-sm text-gray-500">
-              -{redeemResult.pointsSpent} points from your balance
-            </p>
-
             <Button
               onClick={() => {
                 setRedeemResult(null);
@@ -219,15 +214,11 @@ export default function Rewards() {
 
 function RewardCard({
   reward,
-  userPoints,
   onClick,
 }: {
   reward: Reward;
-  userPoints: number;
   onClick: () => void;
 }) {
-  const canAfford = userPoints >= reward.pointsCost;
-
   return (
     <Card hoverable onClick={onClick}>
       <div className="flex items-start gap-4">
@@ -238,9 +229,6 @@ function RewardCard({
           <h3 className="font-semibold">{reward.title}</h3>
           <p className="text-sm text-gray-400">{reward.business.name}</p>
           <div className="flex items-center gap-2 mt-2">
-            <span className={`font-semibold ${canAfford ? 'text-primary-400' : 'text-gray-500'}`}>
-              {reward.pointsCost} pts
-            </span>
             {reward.quantityRemaining !== null && (
               <span className="text-xs text-gray-500">
                 {reward.quantityRemaining} left
