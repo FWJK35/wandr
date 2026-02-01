@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { query } from '../db/index.js';
 
 export type BusinessRecord = {
@@ -30,6 +32,16 @@ export type CandidateBusiness = {
   tags: string[] | null;
   features: Record<string, any> | null;
   is_open_now: boolean;
+};
+
+export type LandmarkRecord = {
+  name: string;
+  category: string;
+  description?: string;
+  latitude: number;
+  longitude: number;
+  hours_json?: Record<string, any> | null;
+  safety_rating?: number | null;
 };
 
 export type CandidateContext = {
@@ -73,11 +85,14 @@ function parseRanges(ranges: string): Array<{ start: number; end: number }> {
   });
 }
 
-function isOpenNow(hoursJson: Record<string, string> | null | undefined, dayKey: string, minutesNow: number): boolean {
+function isOpenNow(hoursJson: Record<string, any> | null | undefined, dayKey: string, minutesNow: number): boolean {
   if (!hoursJson) return false;
+  if (hoursJson.always === true) return true;
   const raw = hoursJson[dayKey];
-  if (!raw || raw.toUpperCase() === 'CLOSED') return false;
-  const ranges = parseRanges(raw);
+  if (!raw) return false;
+  if (typeof raw === 'string' && raw.toUpperCase() === 'CLOSED') return false;
+  if (raw === true) return true;
+  const ranges = typeof raw === 'string' ? parseRanges(raw) : [];
   return ranges.some((r) => minutesNow >= r.start && minutesNow <= r.end);
 }
 
@@ -117,6 +132,93 @@ export async function fetchBusinesses(): Promise<BusinessRecord[]> {
      FROM businesses`
   );
   return rows;
+}
+
+// Landmarks (CSV-backed)
+import fs from 'fs';
+import path from 'path';
+
+export async function fetchLandmarks(): Promise<LandmarkRecord[]> {
+  const candidates = [
+    path.resolve(process.cwd(), 'landmarks.csv'),
+    path.resolve(process.cwd(), 'server', 'landmarks.csv'),
+    path.resolve(__dirname, '..', 'landmarks.csv'),
+    path.resolve(__dirname, '..', 'src', 'landmarks.csv'),
+  ];
+  const csvPath = candidates.find((p) => fs.existsSync(p));
+  if (!csvPath) {
+    throw new Error('landmarks.csv not found');
+  }
+  const text = fs.readFileSync(csvPath, 'utf-8');
+  const [header, ...rows] = text.trim().split(/\r?\n/);
+  const cols = header.split(',');
+  const get = (r: string[], key: string) => r[cols.indexOf(key)];
+
+  return rows.map((line) => {
+    const parts = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"' && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else if (ch === '"') {
+        inQuotes = !inQuotes;
+      } else if (ch === ',' && !inQuotes) {
+        parts.push(current);
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+    parts.push(current);
+
+    const hoursRaw = get(parts, 'hours_json');
+    let hours_json: Record<string, any> | null = null;
+    try {
+      hours_json = hoursRaw ? JSON.parse(hoursRaw) : null;
+    } catch {
+      hours_json = null;
+    }
+
+    return {
+      name: get(parts, 'name'),
+      category: get(parts, 'category'),
+      description: get(parts, 'description'),
+      latitude: Number(get(parts, 'latitude')),
+      longitude: Number(get(parts, 'longitude')),
+      hours_json,
+      safety_rating: Number(get(parts, 'safety_rating')) || null,
+    };
+  });
+}
+
+export function buildLandmarkCandidates(landmarks: LandmarkRecord[], ctx: CandidateContext): CandidateBusiness[] {
+  const { dayKey, hour } = getLocalDayHour();
+  const minutesNow = new Date().toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour12: false }).split(':')
+    .map(Number)
+    .reduce((acc, v, i) => acc + v * [60 * 60, 60, 1][i], 0);
+
+  return landmarks.map((l) => {
+    const business_id = crypto.createHash('sha1').update(`${l.name}|${l.latitude}|${l.longitude}`).digest('hex').slice(0, 10);
+    const distance_m = haversineMeters(ctx.userLat, ctx.userLng, l.latitude, l.longitude);
+    const is_open_now = isOpenNow(l.hours_json || null, dayKey, minutesNow);
+
+    return {
+      business_id,
+      name: l.name,
+      category: l.category,
+      distance_m,
+      busy_now: null,
+      safety_rating: l.safety_rating ?? null,
+      min_percent_off: 0,
+      max_percent_off: 0,
+      tags: ['landmark'],
+      features: { description: l.description },
+      is_open_now,
+    };
+  });
 }
 
 // Gemini quest generation
@@ -177,19 +279,19 @@ async function callGemini(payload: any): Promise<string> {
 {
  "generated_for_window_minutes": number,
  "quests": [
-   {
-    "quest_id": string,
-    "business_id": string,
-    "type": "CHECK_IN"|"PHOTO"|"ROUTE",
-    "title": string,
-    "short_prompt": string,
-    "steps": [{"text": string}],
-    "points": number,
-    "expires_in_minutes": number,
-    "suggested_percent_off": number,
-   "safety_note": string
-   }
- ]
+  {
+   "quest_id": string,
+   "business_id": string,
+   "type": "CHECK_IN"|"PHOTO"|"ROUTE",
+   "title": string,
+   "short_prompt": string,
+   "steps": [{"text": string}],
+   "points": number,
+   "expires_in_minutes": number,
+   "suggested_percent_off": number,
+  "safety_note": string
+  }
+]
 }
 No extra text. Ensure business_id is from candidates.
 Pick expires_in_minutes tailored to the situation (time of day, busyness, distance) but <= windowMinutes.
@@ -199,7 +301,9 @@ Avoid repeating sentence templates like "Visit X" or "Check in at X today."
 Use varied verbs (explore, discover, pop into, grab, wander, peek, try, find).
 Explicitly avoid the phrases "Visit" and "Check in" in titles or prompts.
 At least one quest should include a micro-challenge (photo, item, route, or observation).
-Ensure each quest uses a distinct opening phrase and verb choice from the others in the batch.`
+Ensure each quest uses a distinct opening phrase and verb choice from the others in the batch.
+If a candidate includes features.description (e.g., landmarks), weave one concrete detail from it into the quest title or prompt for flavor.
+For landmarks or non-commerce points (tags may include "landmark"), design leisure/experience-oriented tasks only (photo, observation, route, trivia); avoid any language about buying or spending money.`
         }]
       },
       generationConfig: { temperature: 0.5, maxOutputTokens: 1024 }
@@ -252,11 +356,17 @@ export async function generateQuestsWithGemini(
   const validateQuest = (q: GeminiQuest): GeminiQuest | null => {
     if (!candidateMap.has(q.business_id)) return null;
     const cand = candidateMap.get(q.business_id)!;
-    const minOff = cand.min_percent_off ?? 0;
-    const maxOff = cand.max_percent_off ?? 100;
-    const pct = Math.min(Math.max(q.suggested_percent_off, minOff), maxOff);
+    let pct: number | null;
+    if (cand.min_percent_off === null && cand.max_percent_off === null) {
+      pct = null; // landmarks: no coupon
+    } else {
+      const minOff = cand.min_percent_off ?? 0;
+      const maxOff = cand.max_percent_off ?? 100;
+      const raw = typeof q.suggested_percent_off === 'number' ? q.suggested_percent_off : minOff;
+      pct = Math.min(Math.max(raw, minOff), maxOff);
+    }
     const expires = Math.min(q.expires_in_minutes, ctx.windowMinutes);
-    return { ...q, suggested_percent_off: pct, expires_in_minutes: expires };
+    return { ...q, suggested_percent_off: pct as any, expires_in_minutes: expires };
   };
 
   if (parsed?.quests?.length) {
@@ -321,4 +431,11 @@ export async function generateQuestsWithGemini(
     generated_for_window_minutes: ctx.windowMinutes,
     quests: fallback,
   };
+}
+
+export async function generateLandmarkQuestsWithGemini(
+  candidates: CandidateBusiness[],
+  ctx: CandidateContext
+): Promise<GeminiResponse> {
+  return generateQuestsWithGemini(candidates as any, ctx);
 }

@@ -1,0 +1,17 @@
+name,category,description,latitude,longitude,hours_json,safety_rating
+University Hall,Historical Landmark,"Browns oldest building (1770); served as a barracks and hospital during the Revolution.",41.8261,-71.4039,"{""mon"":""09:00-17:00"",""tue"":""09:00-17:00"",""wed"":""09:00-17:00"",""thu"":""09:00-17:00"",""fri"":""09:00-17:00""}",92
+Benefit Street Mile of History,Scenic Route,"A cobblestone stretch with one of the highest concentrations of Colonial architecture in the US.",41.8256,-71.4065,"{""always"":true}",90
+The Providence Athenaeum,Historical Landmark,"A 200 year old independent library where Edgar Allan Poe famously spent time.",41.8257,-71.4065,"{""mon"":""10:00-18:00"",""tue"":""10:00-18:00"",""wed"":""10:00-18:00"",""thu"":""10:00-18:00"",""fri"":""10:00-18:00"",""sat"":""10:00-16:00""}",88
+Prospect Terrace Park,Scenic Route,"Offers the iconic panoramic view of the Providence skyline and the statue of Roger Williams.",41.8298,-71.4070,"{""sunrise"":true,""sunset"":true}",85
+First Baptist Meetinghouse,Historical Landmark,"The oldest Baptist church congregation in America (1775) with stunning Georgian architecture.",41.8272,-71.4081,"{""mon"":""10:00-16:00"",""tue"":""10:00-16:00"",""wed"":""10:00-16:00"",""thu"":""10:00-16:00"",""fri"":""10:00-16:00""}",89
+RISD Museum,Artistic Landmark,"World class art museum spanning ancient to contemporary works; free on Sundays.",41.8267,-71.4086,"{""mon"":""10:00-17:00"",""wed"":""10:00-17:00"",""thu"":""10:00-17:00"",""fri"":""10:00-17:00"",""sat"":""10:00-17:00"",""sun"":""10:00-17:00""}",91
+Still Here,Artistic Mural,"Large scale mural depicting a Narragansett woman located near the Providence River.",41.8249,-71.4080,"{""always"":true}",84
+Providence Riverwalk,Scenic Route,"A paved path along the river home to the WaterFire basins and pedestrian bridges.",41.8242,-71.4045,"{""always"":true}",87
+Stephen Hopkins House,Historical Landmark,"Home of a Declaration of Independence signer built in 1707.",41.8251,-71.4068,"{""mon"":""10:00-16:00"",""tue"":""10:00-16:00"",""wed"":""10:00-16:00"",""thu"":""10:00-16:00"",""fri"":""10:00-16:00""}",86
+John Brown House Museum,Historical Landmark,"18th century mansion once described as the most elegant and magnificent in the country.",41.8231,-71.4033,"{""mon"":""10:00-16:00"",""tue"":""10:00-16:00"",""wed"":""10:00-16:00"",""thu"":""10:00-16:00"",""fri"":""10:00-16:00""}",87
+She Never Came,Artistic Mural,"Massive photorealistic mural on Washington Street depicting a melancholic man at a table.",41.8228,-71.4143,"{""always"":true}",80
+Misty Blue,Artistic Mural,"Vibrant blue toned mural on Orange Street celebrating Cambodian heritage.",41.8219,-71.4111,"{""always"":true}",82
+The Walk,Scenic Route,"The landscaped pedestrian spine connecting Browns main campus to the Jewelry District.",41.8268,-71.4025,"{""always"":true}",88
+Providence Industrial,Artistic Mural,"A red and black tribute to the citys industrial roots.",41.8225,-71.4161,"{""always"":true}",79
+Old State House,Historical Landmark,"The site where Rhode Island declared independence from Britain two months before the rest of the colonies.",41.8289,-71.4094,"{""mon"":""10:00-16:00"",""tue"":""10:00-16:00"",""wed"":""10:00-16:00"",""thu"":""10:00-16:00"",""fri"":""10:00-16:00""}",90
+India Point Park,Scenic Route,"Waterfront park at the confluence of the Seekonk and Providence Rivers great for sunsets.",41.8176,-71.3926,"{""sunrise"":true,""sunset"":true}",86

@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { query, queryOne, execute } from '../db/index.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
-import { buildCandidates, CandidateContext, fetchBusinesses, generateQuestsWithGemini } from '../quests/decisionEngine.js';
+import { buildCandidates, buildLandmarkCandidates, CandidateContext, fetchBusinesses, fetchLandmarks, generateLandmarkQuestsWithGemini, generateQuestsWithGemini } from '../quests/decisionEngine.js';
 import { addMinutes } from '../utils/time.js';
 import { initializeQuestProgress, calculateQuestProgress, checkQuestComplete } from '../services/questProgress.js';
 
@@ -191,17 +191,17 @@ questsRouter.post('/generate', async (req, res) => {
     if (typeof userLat !== 'number' || typeof userLng !== 'number') {
       return res.status(400).json({ error: 'userLat and userLng are required numbers' });
     }
-    const window = typeof windowMinutes === 'number' && windowMinutes > 0 ? windowMinutes : 120;
+    const baseWindow = typeof windowMinutes === 'number' && windowMinutes > 0 ? windowMinutes : 120;
 
     const businesses = await fetchBusinesses();
-    const ctx: CandidateContext = { userLat, userLng, weatherTag, windowMinutes: window };
+    const ctx: CandidateContext = { userLat, userLng, weatherTag, windowMinutes: baseWindow };
     const candidates = buildCandidates(businesses, ctx);
 
     const generated = await generateQuestsWithGemini(candidates, ctx);
 
     // persist generated quests
     const now = new Date();
-    const endsAt = addMinutes(now, window);
+    const endsAt = addMinutes(now, baseWindow);
     for (const q of generated.quests) {
       await execute(
         `INSERT INTO generated_quests
@@ -228,6 +228,53 @@ questsRouter.post('/generate', async (req, res) => {
   } catch (err: any) {
     console.error('Generate quests error:', err);
     return res.status(500).json({ error: 'Failed to generate quests' });
+  }
+});
+
+// POST /api/quests/generate-landmarks - landmark-focused quests
+questsRouter.post('/generate-landmarks', async (req, res) => {
+  try {
+    const { userLat, userLng, weatherTag, windowMinutes } = req.body || {};
+    if (typeof userLat !== 'number' || typeof userLng !== 'number') {
+      return res.status(400).json({ error: 'userLat and userLng are required numbers' });
+    }
+    const window = typeof windowMinutes === 'number' && windowMinutes > 0 ? windowMinutes : 120;
+
+    const landmarks = await fetchLandmarks();
+    const ctx: CandidateContext = { userLat, userLng, weatherTag, windowMinutes: window };
+    const candidates = buildLandmarkCandidates(landmarks, ctx);
+
+    const generated = await generateLandmarkQuestsWithGemini(candidates, ctx);
+
+    const now = new Date();
+    const endsAt = addMinutes(now, window);
+    for (const q of generated.quests) {
+      const coupon = q.suggested_percent_off;
+      await execute(
+        `INSERT INTO generated_quests
+           (quest_id, business_id, type, title, short_prompt, steps_json, points, starts_at, ends_at, suggested_percent_off, safety_note)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         ON CONFLICT (quest_id) DO NOTHING`,
+        [
+          q.quest_id,
+          q.business_id,
+          q.type,
+          q.title,
+          q.short_prompt,
+          JSON.stringify(q.steps || []),
+          q.points,
+          now,
+          endsAt,
+          coupon,
+          q.safety_note,
+        ]
+      );
+    }
+
+    return res.json(generated);
+  } catch (err: any) {
+    console.error('Generate landmark quests error:', err);
+    return res.status(500).json({ error: 'Failed to generate landmark quests' });
   }
 });
 
