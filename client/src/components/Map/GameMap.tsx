@@ -3,12 +3,14 @@ import MapGL, { NavigationControl, GeolocateControl, Source, Layer } from 'react
 import type { MapRef, FillLayer, LineLayer } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { useLocation } from '../../hooks/useLocation';
-import { businessesApi, zonesApi, questsApi } from '../../services/api';
-import type { Business, Zone, GeneratedQuest } from '../../types';
+import { businessesApi, zonesApi, questsApi, landmarksApi } from '../../services/api';
+import type { Business, Zone, GeneratedQuest, Landmark } from '../../types';
 import BusinessMarker from './BusinessMarker';
 import UserMarker from './UserMarker';
 import ZoneOverlay from './ZoneOverlay';
 import BusinessPanel from './BusinessPanel';
+import LandmarkMarker from './LandmarkMarker';
+import LandmarkPanel from './LandmarkPanel';
 import LoadingSpinner from '../shared/LoadingSpinner';
 
 const MAPBOX_TOKEN = (import.meta as any).env?.VITE_MAPBOX_TOKEN || '';
@@ -52,8 +54,10 @@ export default function GameMap() {
     refresh,
   } = useLocation(true);
   const [businesses, setBusinesses] = useState<Business[]>([]);
+  const [landmarks, setLandmarks] = useState<Landmark[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
+  const [selectedLandmark, setSelectedLandmark] = useState<Landmark | null>(null);
   const [loading, setLoading] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const lastFetchRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -231,7 +235,7 @@ export default function GameMap() {
       const minLng = bounds?.getWest() ?? lng - 0.02;
       const maxLng = bounds?.getEast() ?? lng + 0.02;
       const padding = 0.005;
-      const [businessData, zoneData] = await Promise.all([
+      const [businessData, zoneData, landmarkData] = await Promise.all([
         businessesApi.getNearby(lat, lng, 2000),
         zonesApi.getInViewport({
           minLat: minLat - padding,
@@ -239,10 +243,17 @@ export default function GameMap() {
           minLng: minLng - padding,
           maxLng: maxLng + padding,
         }),
+        landmarksApi.getAll({
+          minLat: minLat - padding,
+          maxLat: maxLat + padding,
+          minLng: minLng - padding,
+          maxLng: maxLng + padding,
+        }).catch(() => []),
       ]);
 
       setBusinesses(businessData);
       setZones(zoneData);
+      setLandmarks(landmarkData);
     } catch (err) {
       console.error('Failed to fetch map data:', err);
     } finally {
@@ -355,7 +366,13 @@ export default function GameMap() {
   // No custom 3D player layer; use DOM marker so it renders above map tiles/buildings
 
   const handleMarkerClick = (business: Business) => {
+    setSelectedLandmark(null);
     setSelectedBusiness(business);
+  };
+
+  const handleLandmarkClick = (landmark: Landmark) => {
+    setSelectedBusiness(null);
+    setSelectedLandmark(landmark);
   };
 
   const applySpoof = useCallback((lat: number, lng: number) => {
@@ -467,6 +484,14 @@ export default function GameMap() {
             business={business}
             highlight={questBusinessIds.has(business.id)}
             onClick={() => handleMarkerClick(business)}
+          />
+        ))}
+        {landmarks.map((landmark) => (
+          <LandmarkMarker
+            key={landmark.id}
+            landmark={landmark}
+            highlight={questBusinessIds.has(landmark.id)}
+            onClick={() => handleLandmarkClick(landmark)}
           />
         ))}
 
@@ -648,6 +673,13 @@ export default function GameMap() {
             }
           }}
           onClose={() => setSelectedBusiness(null)}
+        />
+      )}
+      {selectedLandmark && (
+        <LandmarkPanel
+          landmark={selectedLandmark}
+          userLocation={location}
+          onClose={() => setSelectedLandmark(null)}
         />
       )}
 

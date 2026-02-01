@@ -27,6 +27,16 @@ export interface Business {
   hours?: Record<string, string>;
 }
 
+export interface Landmark {
+  id: string;
+  name: string;
+  category: string;
+  description?: string;
+  latitude: number;
+  longitude: number;
+  is_landmark?: boolean;
+}
+
 export interface CheckIn {
   id: string;
   businessId: string;
@@ -91,6 +101,7 @@ export interface GeneratedQuest {
   safety_note?: string | null;
   starts_at: string;
   ends_at: string;
+  is_landmark?: boolean;
 }
 
 export interface Badge {

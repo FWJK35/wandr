@@ -19,7 +19,7 @@ const categoryIcons: Record<string, string> = {
   'Gym': '💪',
   'Entertainment': '🎮',
   'Park': '🌳',
-  'default': '📍',
+  'default': '🏢',
 };
 
 export default function BusinessMarker3D({ business, onClick }: BusinessMarker3DProps) {

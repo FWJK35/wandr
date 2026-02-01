@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { v5 as uuidv5 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
 import { query } from '../db/index.js';
@@ -53,6 +54,21 @@ export type CandidateContext = {
 
 const toRadians = (deg: number) => (deg * Math.PI) / 180;
 const EARTH_RADIUS_M = 6371000;
+const LANDMARK_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
+
+export function landmarkStableId(name: string, latitude: number, longitude: number): string {
+  const lat = Number(latitude).toFixed(6);
+  const lng = Number(longitude).toFixed(6);
+  return uuidv5(`${name}|${lat}|${lng}`, LANDMARK_NAMESPACE);
+}
+
+export function landmarkLegacyId(name: string, latitude: number, longitude: number): string {
+  return crypto
+    .createHash('sha1')
+    .update(`${name}|${latitude}|${longitude}`)
+    .digest('hex')
+    .slice(0, 10);
+}
 
 function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const dLat = toRadians(lat2 - lat1);
@@ -201,7 +217,7 @@ export function buildLandmarkCandidates(landmarks: LandmarkRecord[], ctx: Candid
     .reduce((acc, v, i) => acc + v * [60 * 60, 60, 1][i], 0);
 
   return landmarks.map((l) => {
-    const business_id = crypto.createHash('sha1').update(`${l.name}|${l.latitude}|${l.longitude}`).digest('hex').slice(0, 10);
+    const business_id = landmarkStableId(l.name, l.latitude, l.longitude);
     const distance_m = haversineMeters(ctx.userLat, ctx.userLng, l.latitude, l.longitude);
     const is_open_now = isOpenNow(l.hours_json || null, dayKey, minutesNow);
 

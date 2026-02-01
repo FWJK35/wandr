@@ -6,6 +6,7 @@ import type {
   Zone,
   Quest,
   Badge,
+  Landmark,
   FeedItem,
   Reward,
   Redemption,
@@ -61,6 +62,22 @@ export const authApi = {
 
   getMe: async () => {
     const res = await api.get<User>('/auth/me');
+    return res.data;
+  },
+};
+
+// Landmarks API
+export const landmarksApi = {
+  getAll: async (bounds?: { minLat: number; maxLat: number; minLng: number; maxLng: number }) => {
+    const params = new URLSearchParams();
+    if (bounds) {
+      params.append('minLat', bounds.minLat.toString());
+      params.append('maxLat', bounds.maxLat.toString());
+      params.append('minLng', bounds.minLng.toString());
+      params.append('maxLng', bounds.maxLng.toString());
+    }
+    const query = params.toString();
+    const res = await api.get<Landmark[]>(`/landmarks${query ? `?${query}` : ''}`);
     return res.data;
   },
 };
@@ -171,6 +188,7 @@ export const checkinsApi = {
         shortPrompt: string;
         suggestedPercentOff?: number | null;
         endsAt: string;
+        isLandmark?: boolean;
       } | null;
       zoneProgress?: {
         zoneId: string;
@@ -306,6 +324,7 @@ export const questsApi = {
       safety_note?: string | null;
       starts_at: string;
       ends_at: string;
+      is_landmark?: boolean;
     }[]>(`/quests/active`);
     return res.data;
   },

@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { query, queryOne, execute } from '../db/index.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
-import { buildCandidates, buildLandmarkCandidates, CandidateContext, fetchBusinesses, fetchLandmarks, generateLandmarkQuestsWithGemini, generateQuestsWithGemini } from '../quests/decisionEngine.js';
+import { buildCandidates, buildLandmarkCandidates, CandidateContext, fetchBusinesses, fetchLandmarks, generateLandmarkQuestsWithGemini, generateQuestsWithGemini, landmarkLegacyId, landmarkStableId } from '../quests/decisionEngine.js';
 import { addMinutes } from '../utils/time.js';
 import { initializeQuestProgress, calculateQuestProgress, checkQuestComplete } from '../services/questProgress.js';
 
@@ -293,28 +293,61 @@ questsRouter.get('/active', async (_req, res) => {
       safety_note: string | null;
       starts_at: Date;
       ends_at: Date;
+      is_landmark: boolean;
     }>(
-      `SELECT quest_id, business_id, type, title, short_prompt, steps_json, points,
-              suggested_percent_off, safety_note, starts_at, ends_at
-       FROM generated_quests
-       WHERE NOW() BETWEEN starts_at AND ends_at
-       ORDER BY starts_at DESC
+      `SELECT g.quest_id, g.business_id, g.type, g.title, g.short_prompt, g.steps_json, g.points,
+              g.suggested_percent_off, g.safety_note, g.starts_at, g.ends_at,
+              CASE
+                WHEN b.id IS NULL THEN true
+                ELSE COALESCE(b.tags @> ARRAY['landmark'], false)
+              END AS is_landmark
+       FROM generated_quests g
+       LEFT JOIN businesses b ON b.id::text = g.business_id
+       WHERE NOW() BETWEEN g.starts_at AND g.ends_at
+       ORDER BY g.starts_at DESC
        LIMIT 100`
     );
 
-    return res.json(rows.map(r => ({
-      quest_id: r.quest_id,
-      business_id: r.business_id,
-      type: r.type,
-      title: r.title,
-      short_prompt: r.short_prompt,
-      steps: Array.isArray(r.steps_json) ? r.steps_json : [],
-      points: r.points,
-      suggested_percent_off: r.suggested_percent_off,
-      safety_note: r.safety_note,
-      starts_at: r.starts_at,
-      ends_at: r.ends_at,
-    })));
+    const landmarks = await fetchLandmarks();
+    const legacyMap = new Map<string, { name: string; latitude: number; longitude: number }>();
+    const stableMap = new Map<string, { name: string; latitude: number; longitude: number }>();
+    landmarks.forEach((l) => {
+      legacyMap.set(landmarkLegacyId(l.name, l.latitude, l.longitude), l);
+      stableMap.set(landmarkStableId(l.name, l.latitude, l.longitude), l);
+    });
+
+    const mapped = await Promise.all(rows.map(async (r) => {
+      let businessId = r.business_id;
+      let isLandmark = !!r.is_landmark;
+      if (isLandmark) {
+        if (legacyMap.has(businessId)) {
+          const landmark = legacyMap.get(businessId)!;
+          const stableId = landmarkStableId(landmark.name, landmark.latitude, landmark.longitude);
+          if (stableId !== businessId) {
+            await execute('UPDATE generated_quests SET business_id = $1 WHERE quest_id = $2', [stableId, r.quest_id]);
+            businessId = stableId;
+          }
+        } else if (stableMap.has(businessId)) {
+          isLandmark = true;
+        }
+      }
+      return {
+        quest_id: r.quest_id,
+        business_id: businessId,
+        type: r.type,
+        title: r.title,
+        short_prompt: r.short_prompt,
+        steps: Array.isArray(r.steps_json) ? r.steps_json : [],
+        points: r.points,
+        suggested_percent_off: r.suggested_percent_off,
+        safety_note: r.safety_note,
+        starts_at: r.starts_at,
+        ends_at: r.ends_at,
+        is_landmark: isLandmark,
+      };
+    }));
+
+    return res.json(mapped);
   } catch (err) {
     console.error('Get active generated quests error:', err);
     return res.status(500).json({ error: 'Failed to fetch active quests' });

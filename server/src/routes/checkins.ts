@@ -1,9 +1,10 @@
 import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { query, queryOne } from '../db/index.js';
+import { query, queryOne, execute } from '../db/index.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { calculatePoints } from '../services/points.js';
 import { calculateQuestProgress, checkQuestComplete } from '../services/questProgress.js';
+import { fetchLandmarks, landmarkLegacyId, landmarkStableId } from '../quests/decisionEngine.js';
 
 export const checkinsRouter = Router();
 
@@ -12,6 +13,7 @@ const CHECKIN_COOLDOWN_HOURS = 24; // 24 hour cooldown per business
 const ZONE_CAPTURE_POINTS = 25; // Points for capturing a zone
 const NEIGHBORHOOD_CAPTURE_POINTS = 50; // Bonus points for capturing entire neighborhood
 const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type QuestCompletion = {
   questId: string;
@@ -27,6 +29,7 @@ type GeneratedQuestMatch = {
   short_prompt: string;
   suggested_percent_off: number | null;
   ends_at: Date;
+  is_landmark?: boolean;
 };
 
 // Helper function to calculate distance in meters using Haversine formula
@@ -104,6 +107,73 @@ async function hydrateZoneNeighborhoodName(zoneId: string, coords: [number, numb
     await query('UPDATE zones SET neighborhood_name = $1 WHERE id = $2', [name, zoneId]);
   }
   return name;
+}
+
+function isUuid(value: string): boolean {
+  return UUID_REGEX.test(value);
+}
+
+async function resolveBusinessTarget(requestedBusinessId: string): Promise<{
+  business: { id: string; name: string; latitude: number; longitude: number };
+  normalizedId: string;
+  legacyId?: string;
+  isLandmark: boolean;
+} | null> {
+  const existingBusiness = await queryOne<{
+    id: string;
+    name: string;
+    latitude: number;
+    longitude: number;
+  }>('SELECT id, name, latitude, longitude FROM businesses WHERE id = $1', [requestedBusinessId]);
+
+  if (existingBusiness) {
+    return {
+      business: existingBusiness,
+      normalizedId: existingBusiness.id,
+      isLandmark: false,
+    };
+  }
+
+  const landmarks = await fetchLandmarks();
+  for (const landmark of landmarks) {
+    const stableId = landmarkStableId(landmark.name, landmark.latitude, landmark.longitude);
+    const legacyId = landmarkLegacyId(landmark.name, landmark.latitude, landmark.longitude);
+    if (requestedBusinessId !== stableId && requestedBusinessId !== legacyId) continue;
+
+    if (!isUuid(stableId)) {
+      return null;
+    }
+
+    await execute(
+      `INSERT INTO businesses (id, name, description, category, address, latitude, longitude, tags, is_verified, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, NOW(), NOW())
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        stableId,
+        landmark.name,
+        landmark.description ?? null,
+        landmark.category,
+        landmark.name,
+        landmark.latitude,
+        landmark.longitude,
+        ['landmark'],
+      ]
+    );
+
+    return {
+      business: {
+        id: stableId,
+        name: landmark.name,
+        latitude: landmark.latitude,
+        longitude: landmark.longitude,
+      },
+      normalizedId: stableId,
+      legacyId,
+      isLandmark: true,
+    };
+  }
+
+  return null;
 }
 
 async function findZoneForPoint(lat: number, lng: number): Promise<{
@@ -225,18 +295,44 @@ async function redeemActiveQuests(userId: string): Promise<QuestCompletion[]> {
   return completions;
 }
 
-async function findQuestEligibility(userId: string, businessId: string): Promise<{
+async function findQuestEligibility(userId: string, businessId: string, legacyBusinessId?: string): Promise<{
   eligible: boolean;
   generatedQuest?: GeneratedQuestMatch;
 }> {
   const generatedQuest = await queryOne<GeneratedQuestMatch>(
-    `SELECT quest_id, business_id, title, short_prompt, suggested_percent_off, ends_at
-     FROM generated_quests
-     WHERE business_id = $1 AND NOW() BETWEEN starts_at AND ends_at
-     ORDER BY starts_at DESC
+    `SELECT g.quest_id, g.business_id, g.title, g.short_prompt, g.suggested_percent_off, g.ends_at,
+            CASE
+              WHEN b.id IS NULL THEN true
+              ELSE COALESCE(b.tags @> ARRAY['landmark'], false)
+            END AS is_landmark
+     FROM generated_quests g
+     LEFT JOIN businesses b ON b.id::text = g.business_id
+     WHERE g.business_id = $1 AND NOW() BETWEEN g.starts_at AND g.ends_at
+     ORDER BY g.starts_at DESC
      LIMIT 1`,
     [businessId]
   );
+
+  if (!generatedQuest && legacyBusinessId && legacyBusinessId !== businessId) {
+    const legacyQuest = await queryOne<GeneratedQuestMatch>(
+      `SELECT g.quest_id, g.business_id, g.title, g.short_prompt, g.suggested_percent_off, g.ends_at,
+              CASE
+                WHEN b.id IS NULL THEN true
+                ELSE COALESCE(b.tags @> ARRAY['landmark'], false)
+              END AS is_landmark
+       FROM generated_quests g
+       LEFT JOIN businesses b ON b.id::text = g.business_id
+       WHERE g.business_id = $1 AND NOW() BETWEEN g.starts_at AND g.ends_at
+       ORDER BY g.starts_at DESC
+       LIMIT 1`,
+      [legacyBusinessId]
+    );
+    if (legacyQuest) {
+      await execute('UPDATE generated_quests SET business_id = $1 WHERE quest_id = $2', [businessId, legacyQuest.quest_id]);
+      legacyQuest.business_id = businessId;
+      return { eligible: true, generatedQuest: legacyQuest };
+    }
+  }
 
   if (generatedQuest) {
     return { eligible: true, generatedQuest };
@@ -272,27 +368,20 @@ async function findQuestEligibility(userId: string, businessId: string): Promise
 // POST /api/checkins - Create a check-in
 checkinsRouter.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { businessId, latitude, longitude, friendIds } = req.body;
+    const { businessId: requestedBusinessId, latitude, longitude, friendIds } = req.body;
     const userId = req.user!.id;
 
-    if (!businessId || latitude === undefined || longitude === undefined) {
+    if (!requestedBusinessId || latitude === undefined || longitude === undefined) {
       return res.status(400).json({ error: 'businessId, latitude, and longitude are required' });
     }
 
-    // Get business location
-    const business = await queryOne<{
-      id: string;
-      name: string;
-      latitude: number;
-      longitude: number;
-    }>(
-      `SELECT id, name, latitude, longitude FROM businesses WHERE id = $1`,
-      [businessId]
-    );
-
-    if (!business) {
+    const resolved = await resolveBusinessTarget(requestedBusinessId);
+    if (!resolved) {
       return res.status(404).json({ error: 'Business not found' });
     }
+    const business = resolved.business;
+    const businessId = resolved.normalizedId;
+    const legacyBusinessId = resolved.legacyId;
 
     // Verify user is within radius
     const distance = calculateDistanceMeters(latitude, longitude, business.latitude, business.longitude);
@@ -323,7 +412,7 @@ checkinsRouter.post('/', authenticate, async (req: AuthRequest, res: Response) =
       });
     }
 
-    const questEligibility = await findQuestEligibility(userId, businessId);
+    const questEligibility = await findQuestEligibility(userId, businessId, legacyBusinessId);
     if (!questEligibility.eligible) {
       return res.status(403).json({
         error: 'No active quest available for this location. Start or claim a quest to check in here.'
@@ -434,6 +523,7 @@ checkinsRouter.post('/', authenticate, async (req: AuthRequest, res: Response) =
             shortPrompt: questEligibility.generatedQuest.short_prompt,
             suggestedPercentOff: questEligibility.generatedQuest.suggested_percent_off,
             endsAt: questEligibility.generatedQuest.ends_at,
+            isLandmark: !!questEligibility.generatedQuest.is_landmark,
           }
         : null,
     });

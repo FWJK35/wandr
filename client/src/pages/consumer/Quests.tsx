@@ -31,6 +31,7 @@ export default function Quests() {
   }, []);
 
   const CLAIMED_KEY = 'claimed_generated_quests';
+  const COMPLETED_KEY = 'completed_generated_quests';
 
   const loadClaimedIds = () => {
     try {
@@ -44,8 +45,24 @@ export default function Quests() {
     }
   };
 
+  const loadCompletedIds = () => {
+    try {
+      const raw = localStorage.getItem(COMPLETED_KEY);
+      if (!raw) return new Set<string>();
+      const arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) return new Set<string>();
+      return new Set<string>(arr);
+    } catch {
+      return new Set<string>();
+    }
+  };
+
   const persistClaimedIds = (ids: Set<string>) => {
     localStorage.setItem(CLAIMED_KEY, JSON.stringify(Array.from(ids)));
+  };
+
+  const persistCompletedIds = (ids: Set<string>) => {
+    localStorage.setItem(COMPLETED_KEY, JSON.stringify(Array.from(ids)));
   };
 
   useEffect(() => {
@@ -65,8 +82,11 @@ export default function Quests() {
       setActive(activeData);
       setCompleted(completedData);
       const claimedIds = loadClaimedIds();
-      const stillActive = generatedData.filter(g => g.quest_id && claimedIds.has(g.quest_id));
-      const remainingAvailable = generatedData.filter(g => !g.quest_id || !claimedIds.has(g.quest_id));
+      const completedIds = loadCompletedIds();
+      const stillActive = generatedData.filter(g => g.quest_id && claimedIds.has(g.quest_id) && !completedIds.has(g.quest_id));
+      const remainingAvailable = generatedData.filter(
+        g => !g.quest_id || (!claimedIds.has(g.quest_id) && !completedIds.has(g.quest_id))
+      );
       const uniqActiveMap = new Map<string, GeneratedQuest>();
       stillActive.forEach(g => {
         if (g.quest_id && !uniqActiveMap.has(g.quest_id)) uniqActiveMap.set(g.quest_id, g);
@@ -77,12 +97,22 @@ export default function Quests() {
       // prune ids that are no longer returned (expired)
       const newIds = new Set<string>(uniqActive.map(g => g.quest_id));
       persistClaimedIds(newIds);
+      const stillCompleted = new Set(
+        Array.from(completedIds).filter((id) => generatedData.some((g) => g.quest_id === id))
+      );
+      persistCompletedIds(stillCompleted);
     } catch (err) {
       console.error('Failed to fetch quests:', err);
     } finally {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    const handleRefresh = () => fetchQuests();
+    window.addEventListener('wandr:quests-refresh', handleRefresh);
+    return () => window.removeEventListener('wandr:quests-refresh', handleRefresh);
+  }, []);
 
   async function handleStartQuest(questId: string) {
     setStartingQuest(questId);
@@ -249,7 +279,7 @@ function handleClaimGenerated(gq: GeneratedQuest) {
                         {renderCountdown(gq.ends_at, nowTs)}
                       </div>
                       {/* Steps intentionally hidden in UI */}
-                      {gq.suggested_percent_off !== null && gq.suggested_percent_off !== undefined && (
+                      {gq.suggested_percent_off !== null && gq.suggested_percent_off !== undefined && gq.suggested_percent_off > 0 && !gq.is_landmark && (
                         <div className="mt-2 text-xs text-amber-200">
                           Redeem coupon: {gq.suggested_percent_off}%
                         </div>
@@ -296,14 +326,16 @@ function handleClaimGenerated(gq: GeneratedQuest) {
                         {renderCountdown(gq.ends_at, nowTs)}
                       </div>
                       <div className="flex justify-between items-center mt-3">
-                        {gq.suggested_percent_off !== null && gq.suggested_percent_off !== undefined && (
+                        {gq.suggested_percent_off !== null && gq.suggested_percent_off !== undefined && gq.suggested_percent_off > 0 && !gq.is_landmark && (
                           <div className="text-xs text-amber-200">
                             Redeem coupon: {gq.suggested_percent_off}%
                           </div>
                         )}
-                        <Button size="sm" onClick={() => setQrQuest(gq)} disabled={claimingId !== null}>
-                          Show QR
-                        </Button>
+                        {!gq.is_landmark && (
+                          <Button size="sm" onClick={() => setQrQuest(gq)} disabled={claimingId !== null}>
+                            Show QR
+                          </Button>
+                        )}
                       </div>
                     </Card>
                   ))}
@@ -478,10 +510,16 @@ function QRModal({ quest, onClose }: { quest: GeneratedQuest; onClose: () => voi
         </button>
         <h3 className="text-lg font-semibold mb-2">{quest.title}</h3>
         <p className="text-xs text-gray-400 mb-3">{quest.short_prompt}</p>
-        <div className="flex justify-center mb-3">
-          <img src={qrUrl} alt="Quest QR" className="w-48 h-48 rounded-lg bg-white p-2" />
-        </div>
-        {quest.suggested_percent_off !== null && quest.suggested_percent_off !== undefined && (
+        {!quest.is_landmark ? (
+          <div className="flex justify-center mb-3">
+            <img src={qrUrl} alt="Quest QR" className="w-48 h-48 rounded-lg bg-white p-2" />
+          </div>
+        ) : (
+          <p className="text-xs text-gray-300 mb-3 text-center">
+            Landmark quests do not use QR codes.
+          </p>
+        )}
+        {quest.suggested_percent_off !== null && quest.suggested_percent_off !== undefined && !quest.is_landmark && (
           <div className="text-xs text-gray-300 mb-2">
             Redeem coupon: {quest.suggested_percent_off}%
           </div>

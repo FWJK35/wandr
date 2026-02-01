@@ -14,6 +14,7 @@ const categoryIcons: Record<string, string> = {
   'Gym': '💪',
   'Entertainment': '🎮',
   'Park': '🌳',
+  'default': '🏢',
 };
 
 export default function Explore() {
@@ -75,7 +76,7 @@ export default function Explore() {
                 : 'bg-dark-100 text-gray-400 hover:text-white'
             }`}
           >
-            <span>{categoryIcons[cat.name] || '📍'}</span>
+            <span>{categoryIcons[cat.name] || categoryIcons.default}</span>
             <span>{cat.name}</span>
             <span className="text-xs opacity-60">({cat.count})</span>
           </button>
@@ -96,7 +97,7 @@ export default function Explore() {
           {businesses.map((business) => (
             <Card key={business.id} hoverable className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-xl bg-dark-200 flex items-center justify-center flex-shrink-0">
-                <span className="text-2xl">{categoryIcons[business.category] || '📍'}</span>
+                <span className="text-2xl">{categoryIcons[business.category] || categoryIcons.default}</span>
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">

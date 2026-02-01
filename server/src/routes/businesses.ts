@@ -58,6 +58,7 @@ businessesRouter.get('/', optionalAuth, async (req: AuthRequest, res: Response) 
        FROM businesses
        WHERE latitude BETWEEN $1 AND $2
        AND longitude BETWEEN $3 AND $4
+       AND (tags IS NULL OR NOT (tags @> ARRAY['landmark']))
        ${categoryFilter}
        ORDER BY is_boosted DESC
        LIMIT $5`,
@@ -349,6 +350,7 @@ businessesRouter.get('/meta/categories', async (req, res: Response) => {
     const categories = await query<{ category: string; count: string }>(
       `SELECT category, COUNT(*) as count
        FROM businesses
+       WHERE tags IS NULL OR NOT (tags @> ARRAY['landmark'])
        GROUP BY category
        ORDER BY count DESC`
     );

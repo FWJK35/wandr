@@ -47,6 +47,7 @@ export default function BusinessPanel({ business, userLocation, activeQuest, onC
       shortPrompt: string;
       suggestedPercentOff?: number | null;
       endsAt: string;
+      isLandmark?: boolean;
     } | null;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +71,9 @@ export default function BusinessPanel({ business, userLocation, activeQuest, onC
           endsAt: activeQuest.ends_at,
         }
       : null;
+  const questIsLandmark = checkinResult?.questRedemption?.isLandmark
+    ?? activeQuest?.is_landmark
+    ?? false;
   const questQrUrl = questSource
     ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
         `quest:${questSource.questId}|business:${questSource.businessId}|title:${questSource.title}`
@@ -134,7 +138,13 @@ export default function BusinessPanel({ business, userLocation, activeQuest, onC
           const next = new Set<string>(Array.isArray(parsed) ? parsed : []);
           next.add(result.questRedemption.questId);
           localStorage.setItem('claimed_generated_quests', JSON.stringify(Array.from(next)));
+          const completedRaw = localStorage.getItem('completed_generated_quests');
+          const completedParsed = completedRaw ? JSON.parse(completedRaw) : [];
+          const completedNext = new Set<string>(Array.isArray(completedParsed) ? completedParsed : []);
+          completedNext.add(result.questRedemption.questId);
+          localStorage.setItem('completed_generated_quests', JSON.stringify(Array.from(completedNext)));
           window.dispatchEvent(new CustomEvent('wandr:quest-claim'));
+          window.dispatchEvent(new CustomEvent('wandr:quests-refresh'));
         } catch (storageErr) {
           console.warn('Failed to persist claimed quest id', storageErr);
         }
@@ -192,7 +202,7 @@ export default function BusinessPanel({ business, userLocation, activeQuest, onC
                 {business.category === 'Gym' && '💪'}
                 {business.category === 'Entertainment' && '🎮'}
                 {business.category === 'Park' && '🌳'}
-                {!['Cafe', 'Restaurant', 'Bar', 'Shop', 'Museum', 'Gym', 'Entertainment', 'Park'].includes(business.category) && '📍'}
+                {!['Cafe', 'Restaurant', 'Bar', 'Shop', 'Museum', 'Gym', 'Entertainment', 'Park'].includes(business.category) && '🏢'}
               </span>
             </div>
             <div className="flex-1 min-w-0">
@@ -286,7 +296,7 @@ export default function BusinessPanel({ business, userLocation, activeQuest, onC
             </div>
           )}
 
-          {questSource && questQrUrl && (
+          {questSource && questQrUrl && !questIsLandmark && (
             <div className="mb-4 p-3 bg-purple-500/10 rounded-xl border border-purple-500/30">
               <div className="text-sm font-semibold text-purple-200 mb-1">Quest QR</div>
               <div className="text-xs text-gray-400 mb-3">{questSource.shortPrompt}</div>
@@ -388,7 +398,7 @@ export default function BusinessPanel({ business, userLocation, activeQuest, onC
         </div>
       </div>
 
-      {showQrModal && questQrLargeUrl && questSource && (
+      {showQrModal && questQrLargeUrl && questSource && !questIsLandmark && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
           <div className="glass rounded-2xl p-4 w-80 relative">
             <button

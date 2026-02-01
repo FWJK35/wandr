@@ -218,7 +218,7 @@ export default function GameMap3D() {
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-primary-500/30 flex items-center justify-center border border-primary-500/40">
-                <span className="text-primary-300 text-lg">📍</span>
+                <span className="text-primary-300 text-lg">🏬</span>
               </div>
               <div>
                 <div className="text-xs text-primary-300/70 uppercase tracking-wide font-medium">Nearby</div>

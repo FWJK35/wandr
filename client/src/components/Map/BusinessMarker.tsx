@@ -17,7 +17,7 @@ const categoryIcons: Record<string, string> = {
   Gym: '💪',
   Entertainment: '🎮',
   Park: '🌳',
-  default: '📍',
+  default: '🏢',
 };
 
 export default function BusinessMarker({ business, onClick, highlight }: BusinessMarkerProps) {
