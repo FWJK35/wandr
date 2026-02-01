@@ -7,6 +7,7 @@ import { businessesApi, zonesApi } from '../../services/api';
 import type { Business, Zone, Neighborhood } from '../../types';
 import BusinessMarker from './BusinessMarker';
 import UserMarker from './UserMarker';
+import { Marker } from 'react-map-gl';
 import ZoneOverlay from './ZoneOverlay';
 import NeighborhoodOverlay from './NeighborhoodOverlay';
 import BusinessPanel from './BusinessPanel';
@@ -40,6 +41,29 @@ export default function GameMap() {
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapMode, setMapMode] = useState<MapMode>('explore');
   const lastFetchRef = useRef<{ lat: number; lng: number } | null>(null);
+
+  // Local static "pokestop" style businesses
+  const staticBusinesses = [
+    { id: 'sb-1', name: 'Bolt Coffee', icon: '☕', lat: 41.8240, lng: -71.4120, hasQuest: true },
+    { id: 'sb-2', name: 'Plant City', icon: '🥗', lat: 41.8233, lng: -71.4016, hasQuest: false },
+    { id: 'sb-3', name: 'PVDonuts', icon: '🍩', lat: 41.8186, lng: -71.4128, hasQuest: true },
+    { id: 'sb-4', name: 'Tallulah’s Taqueria', icon: '🌮', lat: 41.8099, lng: -71.4089, hasQuest: false },
+    { id: 'sb-5', name: 'New Harvest Coffee', icon: '🫘', lat: 41.8092, lng: -71.4054, hasQuest: false },
+    // Thayer Street
+    { id: 'sb-6', name: 'East Side Pockets', icon: '🥙', lat: 41.8290, lng: -71.4013, hasQuest: true },
+    { id: 'sb-7', name: 'Antonio’s Pizza', icon: '🍕', lat: 41.8292, lng: -71.4016, hasQuest: false },
+    { id: 'sb-8', name: 'Kabob and Curry', icon: '🍛', lat: 41.8285, lng: -71.4015, hasQuest: true },
+    { id: 'sb-9', name: 'Spectrum India', icon: '🛍️', lat: 41.8293, lng: -71.4019, hasQuest: false },
+    // Wickenden Street
+    { id: 'sb-10', name: 'Coffee Exchange', icon: '☕', lat: 41.8186, lng: -71.3984, hasQuest: false },
+    { id: 'sb-11', name: 'Fellini Pizzeria', icon: '🍕', lat: 41.8192, lng: -71.3979, hasQuest: true },
+    { id: 'sb-12', name: 'Shoppe Pioneer', icon: '🛒', lat: 41.8189, lng: -71.3989, hasQuest: false },
+    { id: 'sb-13', name: 'The Duck & Bunny', icon: '🧁', lat: 41.8181, lng: -71.3996, hasQuest: false },
+    { id: 'sb-14', name: 'Café Zog', icon: '☕', lat: 41.8184, lng: -71.3991, hasQuest: false },
+    { id: 'sb-15', name: 'The Shop', icon: '🧋', lat: 41.8188, lng: -71.3999, hasQuest: false },
+    { id: 'sb-16', name: 'The Point Tavern', icon: '🍺', lat: 41.8194, lng: -71.3994, hasQuest: false },
+    { id: 'sb-17', name: 'Pleasantry', icon: '🛍️', lat: 41.8182, lng: -71.3987, hasQuest: false },
+  ];
   const [spoofOpen, setSpoofOpen] = useState(false);
   const [spoofLat, setSpoofLat] = useState('');
   const [spoofLng, setSpoofLng] = useState('');
@@ -273,6 +297,34 @@ export default function GameMap() {
           />
         ))}
 
+        {/* Static local small businesses (Pokéstop-style) */}
+        {mapMode === 'explore' && staticBusinesses.map((spot) => (
+          <Marker
+            key={spot.id}
+            longitude={spot.lng}
+            latitude={spot.lat}
+            anchor="center"
+          >
+            <div className="group relative -mt-4 flex flex-col items-center">
+              <div
+                className={`
+                  w-10 h-10 rounded-full flex items-center justify-center text-xl shadow-lg border
+                  ${spot.hasQuest
+                    ? 'bg-gradient-to-br from-amber-300 via-amber-200 to-amber-100 border-amber-400 ring-2 ring-amber-300/70'
+                    : 'bg-white border-gray-200'}
+                `}
+              >
+                {spot.icon}
+              </div>
+              <div className="pointer-events-none absolute top-12 z-10 hidden group-hover:flex">
+                <div className="px-2 py-1 rounded-full text-xs font-semibold bg-black/80 text-white shadow-lg whitespace-nowrap">
+                  {spot.name}
+                </div>
+              </div>
+            </div>
+          </Marker>
+        ))}
+
         {/* User marker always visible; DOM overlay keeps it above tiles/buildings */}
         {location && (
           <UserMarker
@@ -448,4 +500,3 @@ export default function GameMap() {
     </div>
   );
 }
-
