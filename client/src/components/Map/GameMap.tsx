@@ -48,18 +48,19 @@ export default function GameMap() {
   const [viewState, setViewState] = useState({
     latitude: defaultCenter.lat,
     longitude: defaultCenter.lng,
-    zoom: 16,
-    pitch: 45,
+    zoom: 18.3,
+    pitch: 60,
     bearing: 0,
   });
 
-  // Update view when user location changes
+  // Update view when user location changes (always center on player)
   useEffect(() => {
-    if (location && !lastFetchRef.current) {
+    if (location) {
       setViewState(prev => ({
         ...prev,
         latitude: location.latitude,
         longitude: location.longitude,
+        // keep bearing/pitch/zoom untouched so user camera stays consistent
       }));
     }
   }, [location]);
@@ -156,6 +157,8 @@ export default function GameMap() {
     }
   }, []);
 
+  // No custom 3D player layer; use DOM marker so it renders above map tiles/buildings
+
   const handleMarkerClick = (business: Business) => {
     setSelectedBusiness(business);
   };
@@ -220,7 +223,22 @@ export default function GameMap() {
       <Map
         ref={mapRef}
         {...viewState}
-        onMove={(evt) => setViewState(evt.viewState)}
+        dragPan={false} // disable left-click panning; keep right-drag rotation
+        dragRotate
+        pitchWithRotate
+        maxPitch={85}
+        onMove={(evt) => {
+          const lat = location?.latitude ?? defaultCenter.lat;
+          const lng = location?.longitude ?? defaultCenter.lng;
+          setViewState(prev => ({
+            ...prev,
+            bearing: evt.viewState.bearing,
+            pitch: evt.viewState.pitch,
+            zoom: evt.viewState.zoom,
+            latitude: lat,
+            longitude: lng,
+          }));
+        }}
         onLoad={handleMapLoad}
         mapboxAccessToken={MAPBOX_TOKEN}
         mapStyle="mapbox://styles/mapbox/dark-v11"
@@ -255,12 +273,13 @@ export default function GameMap() {
           />
         ))}
 
-        {/* User marker always visible */}
+        {/* User marker always visible; DOM overlay keeps it above tiles/buildings */}
         {location && (
           <UserMarker
             position={{ lat: location.latitude, lng: location.longitude }}
           />
         )}
+
       </Map>
 
             {/* Mode toggle + testing tools */}
@@ -349,7 +368,7 @@ export default function GameMap() {
         )}
       </div>
 
-      {/* Stats bar */}
+      {/* Stats bar + controls hint */}
       <div className="absolute top-4 left-44 right-16 flex justify-between items-start pointer-events-none">
         <div className="glass rounded-xl px-4 py-2 pointer-events-auto">
           <div className="flex items-center gap-4 text-sm">
@@ -384,6 +403,16 @@ export default function GameMap() {
             <LoadingSpinner size="sm" />
           </div>
         )}
+      </div>
+
+      {/* Camera control hint */}
+      <div className="absolute bottom-4 left-4 pointer-events-none">
+        <div className="glass rounded-xl px-3 py-2 text-xs text-gray-300 pointer-events-auto">
+          <div className="flex items-center gap-2">
+            <span>🖱️</span>
+            <span>Rotate with right-drag/Ctrl+drag • Scroll to zoom • Center locked on you</span>
+          </div>
+        </div>
       </div>
 
       {/* Location error */}
