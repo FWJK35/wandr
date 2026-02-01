@@ -1,4 +1,4 @@
-import { OverlayView } from '@react-google-maps/api';
+import { Marker } from 'react-map-gl';
 import type { Business } from '../../types';
 
 interface BusinessMarkerProps {
@@ -23,21 +23,25 @@ export default function BusinessMarker({ business, onClick }: BusinessMarkerProp
   const icon = categoryIcons[business.category] || categoryIcons.default;
 
   return (
-    <OverlayView
-      position={{ lat: business.latitude, lng: business.longitude }}
-      mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+    <Marker
+      longitude={business.longitude}
+      latitude={business.latitude}
+      anchor="center"
+      onClick={(e) => {
+        e.originalEvent.stopPropagation();
+        onClick();
+      }}
     >
       <div
         className={`
-          relative cursor-pointer transform -translate-x-1/2 -translate-y-1/2
+          relative cursor-pointer
           transition-transform hover:scale-110
           ${business.isBoosted ? 'animate-pulse-slow' : ''}
         `}
-        onClick={onClick}
       >
         {/* Outer glow for boosted businesses */}
         {business.isBoosted && (
-          <div className="absolute inset-0 rounded-full bg-yellow-400/30 animate-ping" style={{ width: '48px', height: '48px', marginLeft: '-8px', marginTop: '-8px' }} />
+          <div className="absolute inset-0 rounded-full bg-yellow-400/30 animate-ping" style={{ width: '48px', height: '48px', marginLeft: '-4px', marginTop: '-4px' }} />
         )}
 
         {/* Main marker */}
@@ -62,13 +66,13 @@ export default function BusinessMarker({ business, onClick }: BusinessMarkerProp
           </div>
         )}
 
-        {/* Name tooltip on hover */}
-        <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 whitespace-nowrap opacity-0 hover:opacity-100 transition-opacity pointer-events-none">
+        {/* Name tooltip */}
+        <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
           <div className="bg-dark-100 px-2 py-1 rounded text-xs text-white border border-white/10">
             {business.name}
           </div>
         </div>
       </div>
-    </OverlayView>
+    </Marker>
   );
 }

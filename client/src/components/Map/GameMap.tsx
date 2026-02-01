@@ -1,180 +1,72 @@
 import { useCallback, useState, useEffect, useRef } from 'react';
-import { GoogleMap, useJsApiLoader } from '@react-google-maps/api';
+import Map, { NavigationControl, GeolocateControl } from 'react-map-gl';
+import type { MapRef } from 'react-map-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
 import { useLocation } from '../../hooks/useLocation';
 import { businessesApi, zonesApi } from '../../services/api';
-import type { Business, Zone } from '../../types';
+import type { Business, Zone, Neighborhood } from '../../types';
 import BusinessMarker from './BusinessMarker';
 import UserMarker from './UserMarker';
 import ZoneOverlay from './ZoneOverlay';
+import NeighborhoodOverlay from './NeighborhoodOverlay';
 import BusinessPanel from './BusinessPanel';
+import TerritoryPanel from './TerritoryPanel';
 import LoadingSpinner from '../shared/LoadingSpinner';
 
-const GOOGLE_MAPS_API_KEY = (import.meta as any).env?.VITE_GOOGLE_MAPS_API_KEY || '';
-
-// Dark game-style map styling
-const mapStyles = [
-  { elementType: 'geometry', stylers: [{ color: '#1d2c4d' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#8ec3b9' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#1a3646' }] },
-  {
-    featureType: 'administrative.country',
-    elementType: 'geometry.stroke',
-    stylers: [{ color: '#4b6878' }],
-  },
-  {
-    featureType: 'administrative.land_parcel',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#64779e' }],
-  },
-  {
-    featureType: 'administrative.province',
-    elementType: 'geometry.stroke',
-    stylers: [{ color: '#4b6878' }],
-  },
-  {
-    featureType: 'landscape.man_made',
-    elementType: 'geometry.stroke',
-    stylers: [{ color: '#334e87' }],
-  },
-  {
-    featureType: 'landscape.natural',
-    elementType: 'geometry',
-    stylers: [{ color: '#023e58' }],
-  },
-  {
-    featureType: 'poi',
-    elementType: 'geometry',
-    stylers: [{ color: '#283d6a' }],
-  },
-  {
-    featureType: 'poi',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#6f9ba5' }],
-  },
-  {
-    featureType: 'poi',
-    elementType: 'labels.text.stroke',
-    stylers: [{ color: '#1d2c4d' }],
-  },
-  {
-    featureType: 'poi.park',
-    elementType: 'geometry.fill',
-    stylers: [{ color: '#023e58' }],
-  },
-  {
-    featureType: 'poi.park',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#3C7680' }],
-  },
-  {
-    featureType: 'road',
-    elementType: 'geometry',
-    stylers: [{ color: '#304a7d' }],
-  },
-  {
-    featureType: 'road',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#98a5be' }],
-  },
-  {
-    featureType: 'road',
-    elementType: 'labels.text.stroke',
-    stylers: [{ color: '#1d2c4d' }],
-  },
-  {
-    featureType: 'road.highway',
-    elementType: 'geometry',
-    stylers: [{ color: '#2c6675' }],
-  },
-  {
-    featureType: 'road.highway',
-    elementType: 'geometry.stroke',
-    stylers: [{ color: '#255763' }],
-  },
-  {
-    featureType: 'road.highway',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#b0d5ce' }],
-  },
-  {
-    featureType: 'road.highway',
-    elementType: 'labels.text.stroke',
-    stylers: [{ color: '#023e58' }],
-  },
-  {
-    featureType: 'transit',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#98a5be' }],
-  },
-  {
-    featureType: 'transit',
-    elementType: 'labels.text.stroke',
-    stylers: [{ color: '#1d2c4d' }],
-  },
-  {
-    featureType: 'transit.line',
-    elementType: 'geometry.fill',
-    stylers: [{ color: '#283d6a' }],
-  },
-  {
-    featureType: 'transit.station',
-    elementType: 'geometry',
-    stylers: [{ color: '#3a4762' }],
-  },
-  {
-    featureType: 'water',
-    elementType: 'geometry',
-    stylers: [{ color: '#0e1626' }],
-  },
-  {
-    featureType: 'water',
-    elementType: 'labels.text.fill',
-    stylers: [{ color: '#4e6d70' }],
-  },
-];
-
-const mapContainerStyle = {
-  width: '100%',
-  height: '100%',
-};
+const MAPBOX_TOKEN = (import.meta as any).env?.VITE_MAPBOX_TOKEN || '';
 
 const defaultCenter = {
   lat: 41.8268,
   lng: -71.4025,
 };
 
-export default function GameMap() {
-  const { isLoaded, loadError } = useJsApiLoader({
-    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-  });
+type MapMode = 'explore' | 'territory';
 
+export default function GameMap() {
+  const mapRef = useRef<MapRef>(null);
   const { location, error: locationError } = useLocation(true);
-  const [, setMap] = useState<google.maps.Map | null>(null);
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
+  const [neighborhoods, setNeighborhoods] = useState<Neighborhood[]>([]);
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
   const [loading, setLoading] = useState(false);
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapMode, setMapMode] = useState<MapMode>('explore');
   const lastFetchRef = useRef<{ lat: number; lng: number } | null>(null);
 
-  const center = location
-    ? { lat: location.latitude, lng: location.longitude }
-    : defaultCenter;
+  const [viewState, setViewState] = useState({
+    latitude: defaultCenter.lat,
+    longitude: defaultCenter.lng,
+    zoom: 16,
+    pitch: 45,
+    bearing: 0,
+  });
+
+  // Update view when user location changes
+  useEffect(() => {
+    if (location && !lastFetchRef.current) {
+      setViewState(prev => ({
+        ...prev,
+        latitude: location.latitude,
+        longitude: location.longitude,
+      }));
+    }
+  }, [location]);
 
   const fetchData = useCallback(async (lat: number, lng: number) => {
-    // Don't fetch if location hasn't changed significantly
     if (lastFetchRef.current) {
       const dist = Math.sqrt(
         Math.pow(lat - lastFetchRef.current.lat, 2) +
         Math.pow(lng - lastFetchRef.current.lng, 2)
       );
-      if (dist < 0.001) return; // ~100m
+      if (dist < 0.001) return;
     }
 
     lastFetchRef.current = { lat, lng };
     setLoading(true);
 
     try {
-      const [businessData, zoneData] = await Promise.all([
+      const [businessData, zoneData, neighborhoodData] = await Promise.all([
         businessesApi.getNearby(lat, lng, 2000),
         zonesApi.getInViewport({
           minLat: lat - 0.02,
@@ -182,10 +74,12 @@ export default function GameMap() {
           minLng: lng - 0.02,
           maxLng: lng + 0.02,
         }),
+        zonesApi.getNeighborhoods(),
       ]);
 
       setBusinesses(businessData);
       setZones(zoneData);
+      setNeighborhoods(neighborhoodData);
     } catch (err) {
       console.error('Failed to fetch map data:', err);
     } finally {
@@ -193,70 +87,110 @@ export default function GameMap() {
     }
   }, []);
 
-  // Fetch data when location changes
   useEffect(() => {
     if (location) {
       fetchData(location.latitude, location.longitude);
     }
   }, [location, fetchData]);
 
-  const onLoad = useCallback((map: google.maps.Map) => {
-    setMap(map);
-  }, []);
+  const handleMapLoad = useCallback(() => {
+    setMapLoaded(true);
+    const map = mapRef.current?.getMap();
+    if (map) {
+      const layers = map.getStyle()?.layers;
+      const labelLayerId = layers?.find(
+        (layer) => layer.type === 'symbol' && layer.layout?.['text-field']
+      )?.id;
 
-  const onUnmount = useCallback(() => {
-    setMap(null);
+      map.addLayer(
+        {
+          id: '3d-buildings',
+          source: 'composite',
+          'source-layer': 'building',
+          filter: ['==', 'extrude', 'true'],
+          type: 'fill-extrusion',
+          minzoom: 14,
+          paint: {
+            'fill-extrusion-color': '#1a1f2e',
+            'fill-extrusion-height': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              14,
+              0,
+              14.5,
+              ['get', 'height'],
+            ],
+            'fill-extrusion-base': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              14,
+              0,
+              14.5,
+              ['get', 'min_height'],
+            ],
+            'fill-extrusion-opacity': 0.8,
+          },
+        },
+        labelLayerId
+      );
+    }
   }, []);
 
   const handleMarkerClick = (business: Business) => {
     setSelectedBusiness(business);
   };
 
-  if (loadError) {
+  const toggleMode = () => {
+    setMapMode(prev => prev === 'explore' ? 'territory' : 'explore');
+    setSelectedBusiness(null);
+  };
+
+  if (!MAPBOX_TOKEN) {
     return (
       <div className="h-full flex items-center justify-center bg-dark-300">
         <div className="text-center">
-          <p className="text-red-400 mb-2">Failed to load Google Maps</p>
-          <p className="text-gray-500 text-sm">Please check your API key configuration</p>
+          <p className="text-red-400 mb-2">Mapbox token not configured</p>
+          <p className="text-gray-500 text-sm">Please add VITE_MAPBOX_TOKEN to your .env file</p>
         </div>
-      </div>
-    );
-  }
-
-  if (!isLoaded) {
-    return (
-      <div className="h-full flex items-center justify-center bg-dark-300">
-        <LoadingSpinner size="lg" />
       </div>
     );
   }
 
   return (
     <div className="relative h-full">
-      <GoogleMap
-        mapContainerStyle={mapContainerStyle}
-        center={center}
-        zoom={16}
-        onLoad={onLoad}
-        onUnmount={onUnmount}
-        options={{
-          styles: mapStyles,
-          disableDefaultUI: true,
-          zoomControl: true,
-          zoomControlOptions: {
-            position: google.maps.ControlPosition.RIGHT_CENTER,
-          },
-          clickableIcons: false,
-          gestureHandling: 'greedy',
-        }}
+      <Map
+        ref={mapRef}
+        {...viewState}
+        onMove={(evt) => setViewState(evt.viewState)}
+        onLoad={handleMapLoad}
+        mapboxAccessToken={MAPBOX_TOKEN}
+        mapStyle="mapbox://styles/mapbox/dark-v11"
+        style={{ width: '100%', height: '100%' }}
+        antialias={true}
       >
-        {/* Zone overlays */}
-        {zones.map((zone) => (
-          <ZoneOverlay key={zone.id} zone={zone} />
-        ))}
+        <NavigationControl position="top-right" />
+        <GeolocateControl
+          position="top-right"
+          trackUserLocation
+          showUserHeading
+        />
 
-        {/* Business markers */}
-        {businesses.map((business) => (
+        {/* Territory mode: Show neighborhoods and zones */}
+        {mapLoaded && mapMode === 'territory' && (
+          <>
+            {neighborhoods.map((neighborhood) => (
+              <NeighborhoodOverlay key={neighborhood.id} neighborhood={neighborhood} />
+            ))}
+            {zones.map((zone) => (
+              <ZoneOverlay key={zone.id} zone={zone} />
+            ))}
+          </>
+        )}
+
+        {/* Explore mode: Show business markers */}
+        {mapMode === 'explore' && businesses.map((business) => (
           <BusinessMarker
             key={business.id}
             business={business}
@@ -264,26 +198,66 @@ export default function GameMap() {
           />
         ))}
 
-        {/* User marker */}
+        {/* User marker always visible */}
         {location && (
           <UserMarker
             position={{ lat: location.latitude, lng: location.longitude }}
           />
         )}
-      </GoogleMap>
+      </Map>
 
-      {/* Top bar with stats */}
-      <div className="absolute top-4 left-4 right-4 flex justify-between items-start pointer-events-none">
+      {/* Mode toggle button */}
+      <div className="absolute top-4 left-4 z-10">
+        <button
+          onClick={toggleMode}
+          className={`
+            px-4 py-2 rounded-xl font-medium text-sm transition-all
+            ${mapMode === 'explore'
+              ? 'bg-primary-500 text-white'
+              : 'bg-emerald-500 text-white'
+            }
+            shadow-lg hover:scale-105
+          `}
+        >
+          {mapMode === 'explore' ? (
+            <span className="flex items-center gap-2">
+              <span>🧭</span> Explore Mode
+            </span>
+          ) : (
+            <span className="flex items-center gap-2">
+              <span>🗺️</span> Territory Mode
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Stats bar */}
+      <div className="absolute top-4 left-44 right-16 flex justify-between items-start pointer-events-none">
         <div className="glass rounded-xl px-4 py-2 pointer-events-auto">
           <div className="flex items-center gap-4 text-sm">
-            <div>
-              <span className="text-gray-400">Nearby:</span>
-              <span className="ml-1 text-white font-semibold">{businesses.length}</span>
-            </div>
-            <div>
-              <span className="text-gray-400">Zones:</span>
-              <span className="ml-1 text-white font-semibold">{zones.length}</span>
-            </div>
+            {mapMode === 'explore' ? (
+              <>
+                <div>
+                  <span className="text-gray-400">Nearby:</span>
+                  <span className="ml-1 text-white font-semibold">{businesses.length}</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <span className="text-gray-400">Zones:</span>
+                  <span className="ml-1 text-white font-semibold">
+                    {zones.filter(z => z.captured).length}/{zones.length}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-400">Neighborhoods:</span>
+                  <span className="ml-1 text-white font-semibold">
+                    {neighborhoods.filter(n => n.fullyCaptured).length}/{neighborhoods.length}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -303,12 +277,20 @@ export default function GameMap() {
         </div>
       )}
 
-      {/* Business detail panel */}
-      {selectedBusiness && (
+      {/* Business detail panel (explore mode) */}
+      {mapMode === 'explore' && selectedBusiness && (
         <BusinessPanel
           business={selectedBusiness}
           userLocation={location}
           onClose={() => setSelectedBusiness(null)}
+        />
+      )}
+
+      {/* Territory panel (territory mode) */}
+      {mapMode === 'territory' && (
+        <TerritoryPanel
+          zones={zones}
+          neighborhoods={neighborhoods}
         />
       )}
     </div>

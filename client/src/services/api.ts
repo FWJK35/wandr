@@ -4,6 +4,7 @@ import type {
   Business,
   CheckIn,
   Zone,
+  Neighborhood,
   Quest,
   Badge,
   FeedItem,
@@ -166,8 +167,12 @@ export const zonesApi = {
   getById: async (id: string) => {
     const res = await api.get<Zone & {
       businesses: Business[];
-      leaderboard: LeaderboardEntry[];
     }>(`/zones/${id}`);
+    return res.data;
+  },
+
+  getNeighborhoods: async () => {
+    const res = await api.get<Neighborhood[]>('/zones/neighborhoods');
     return res.data;
   },
 

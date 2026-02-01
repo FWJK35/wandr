@@ -2,12 +2,41 @@ import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { query, queryOne } from '../db/index.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
-import { calculatePoints, POINTS } from '../services/points.js';
+import { calculatePoints } from '../services/points.js';
 
 export const checkinsRouter = Router();
 
 const CHECKIN_RADIUS_METERS = 50; // Must be within 50m to check in
 const CHECKIN_COOLDOWN_HOURS = 24; // 24 hour cooldown per business
+const ZONE_CAPTURE_POINTS = 25; // Points for capturing a zone
+const NEIGHBORHOOD_CAPTURE_POINTS = 50; // Bonus points for capturing entire neighborhood
+
+// Helper function to calculate distance in meters using Haversine formula
+function calculateDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000; // Earth's radius in meters
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+// Helper to check if a point is inside a polygon
+function pointInPolygon(lng: number, lat: number, polygon: [number, number][]): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i][0], yi = polygon[i][1];
+    const xj = polygon[j][0], yj = polygon[j][1];
+
+    if (((yi > lat) !== (yj > lat)) && (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
 
 // POST /api/checkins - Create a check-in
 checkinsRouter.post('/', authenticate, async (req: AuthRequest, res: Response) => {
@@ -26,10 +55,7 @@ checkinsRouter.post('/', authenticate, async (req: AuthRequest, res: Response) =
       latitude: number;
       longitude: number;
     }>(
-      `SELECT id, name,
-        ST_Y(location::geometry) as latitude,
-        ST_X(location::geometry) as longitude
-       FROM businesses WHERE id = $1`,
+      `SELECT id, name, latitude, longitude FROM businesses WHERE id = $1`,
       [businessId]
     );
 
@@ -37,19 +63,13 @@ checkinsRouter.post('/', authenticate, async (req: AuthRequest, res: Response) =
       return res.status(404).json({ error: 'Business not found' });
     }
 
-    // Verify user is within radius using PostGIS
-    const [distanceCheck] = await query<{ distance: number }>(
-      `SELECT ST_Distance(
-        ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
-        ST_SetSRID(ST_MakePoint($3, $4), 4326)::geography
-      ) as distance`,
-      [longitude, latitude, business.longitude, business.latitude]
-    );
+    // Verify user is within radius
+    const distance = calculateDistanceMeters(latitude, longitude, business.latitude, business.longitude);
 
-    if (distanceCheck.distance > CHECKIN_RADIUS_METERS) {
+    if (distance > CHECKIN_RADIUS_METERS) {
       return res.status(400).json({
         error: 'Too far from business',
-        distance: Math.round(distanceCheck.distance),
+        distance: Math.round(distance),
         maxDistance: CHECKIN_RADIUS_METERS
       });
     }
@@ -97,8 +117,8 @@ checkinsRouter.post('/', authenticate, async (req: AuthRequest, res: Response) =
     // Create check-in
     const checkinId = uuidv4();
     await query(
-      `INSERT INTO check_ins (id, user_id, business_id, location, points_earned, created_at)
-       VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326), $6, NOW())`,
+      `INSERT INTO check_ins (id, user_id, business_id, latitude, longitude, points_earned, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
       [checkinId, userId, businessId, longitude, latitude, pointsBreakdown.total]
     );
 
@@ -111,8 +131,23 @@ checkinsRouter.post('/', authenticate, async (req: AuthRequest, res: Response) =
     // Update streak
     await updateStreak(userId);
 
-    // Check zone progress
-    const zoneProgress = await updateZoneProgress(userId, businessId);
+    // Check zone capture
+    const zoneCapture = await checkAndUpdateZoneCapture(userId, business.latitude, business.longitude);
+
+    // Add zone/neighborhood bonus points
+    let bonusPoints = 0;
+    if (zoneCapture.newZoneCaptured) {
+      bonusPoints += ZONE_CAPTURE_POINTS;
+    }
+    if (zoneCapture.newNeighborhoodCaptured) {
+      bonusPoints += NEIGHBORHOOD_CAPTURE_POINTS;
+    }
+    if (bonusPoints > 0) {
+      await query(
+        'UPDATE users SET points = points + $1 WHERE id = $2',
+        [bonusPoints, userId]
+      );
+    }
 
     // Create feed item
     const feedId = uuidv4();
@@ -123,7 +158,9 @@ checkinsRouter.post('/', authenticate, async (req: AuthRequest, res: Response) =
         businessId,
         businessName: business.name,
         points: pointsBreakdown.total,
-        isFirstVisit
+        isFirstVisit,
+        zoneCaptured: zoneCapture.newZoneCaptured ? zoneCapture.zoneName : null,
+        neighborhoodCaptured: zoneCapture.newNeighborhoodCaptured ? zoneCapture.neighborhoodName : null
       })]
     );
 
@@ -131,9 +168,22 @@ checkinsRouter.post('/', authenticate, async (req: AuthRequest, res: Response) =
       id: checkinId,
       businessId,
       businessName: business.name,
-      points: pointsBreakdown,
+      points: {
+        ...pointsBreakdown,
+        zoneCaptureBonus: zoneCapture.newZoneCaptured ? ZONE_CAPTURE_POINTS : 0,
+        neighborhoodBonus: zoneCapture.newNeighborhoodCaptured ? NEIGHBORHOOD_CAPTURE_POINTS : 0,
+        total: pointsBreakdown.total + bonusPoints
+      },
       isFirstVisit,
-      zoneProgress
+      zoneCapture: zoneCapture.newZoneCaptured ? {
+        zoneId: zoneCapture.zoneId,
+        zoneName: zoneCapture.zoneName,
+        neighborhoodName: zoneCapture.neighborhoodName
+      } : null,
+      neighborhoodCapture: zoneCapture.newNeighborhoodCaptured ? {
+        neighborhoodId: zoneCapture.neighborhoodId,
+        neighborhoodName: zoneCapture.neighborhoodName
+      } : null
     });
   } catch (error) {
     console.error('Check-in error:', error);
@@ -160,9 +210,7 @@ checkinsRouter.get('/history', authenticate, async (req: AuthRequest, res: Respo
     }>(
       `SELECT
         c.id, c.business_id, b.name as business_name, b.category as business_category,
-        ST_Y(c.location::geometry) as latitude,
-        ST_X(c.location::geometry) as longitude,
-        c.points_earned, c.created_at
+        c.latitude, c.longitude, c.points_earned, c.created_at
        FROM check_ins c
        JOIN businesses b ON b.id = c.business_id
        WHERE c.user_id = $1
@@ -208,11 +256,33 @@ checkinsRouter.get('/stats', authenticate, async (req: AuthRequest, res: Respons
       [userId]
     );
 
+    // Get zone stats
+    const [zoneStats] = await query<{
+      zones_captured: string;
+    }>(
+      `SELECT COUNT(*) as zones_captured
+       FROM zone_progress
+       WHERE user_id = $1 AND captured = true`,
+      [userId]
+    );
+
+    // Get neighborhood stats
+    const [hoodStats] = await query<{
+      neighborhoods_captured: string;
+    }>(
+      `SELECT COUNT(*) as neighborhoods_captured
+       FROM neighborhood_progress
+       WHERE user_id = $1 AND fully_captured = true`,
+      [userId]
+    );
+
     res.json({
       totalCheckins: parseInt(stats?.total_checkins || '0'),
       uniquePlaces: parseInt(stats?.unique_places || '0'),
       totalPoints: parseInt(stats?.total_points || '0'),
-      thisWeek: parseInt(stats?.this_week || '0')
+      thisWeek: parseInt(stats?.this_week || '0'),
+      zonesCaptured: parseInt(zoneStats?.zones_captured || '0'),
+      neighborhoodsCaptured: parseInt(hoodStats?.neighborhoods_captured || '0')
     });
   } catch (error) {
     console.error('Get stats error:', error);
@@ -248,48 +318,112 @@ async function updateStreak(userId: string): Promise<void> {
   }
 }
 
-async function updateZoneProgress(userId: string, businessId: string): Promise<any> {
-  // Get zone for business
-  const zone = await queryOne<{ id: string; name: string; total_locations: number }>(
-    `SELECT z.id, z.name,
-      (SELECT COUNT(*) FROM businesses WHERE ST_Contains(z.boundary, location::geometry)) as total_locations
-     FROM zones z
-     JOIN businesses b ON ST_Contains(z.boundary, b.location::geometry)
-     WHERE b.id = $1`,
-    [businessId]
+async function checkAndUpdateZoneCapture(userId: string, businessLat: number, businessLng: number): Promise<{
+  newZoneCaptured: boolean;
+  zoneId?: string;
+  zoneName?: string;
+  neighborhoodId?: string;
+  neighborhoodName?: string;
+  newNeighborhoodCaptured: boolean;
+}> {
+  // Get all zones
+  const zones = await query<{
+    id: string;
+    name: string;
+    neighborhood_id: string | null;
+    boundary_coords: string;
+  }>(
+    'SELECT id, name, neighborhood_id, boundary_coords FROM zones'
   );
 
-  if (!zone) return null;
+  // Find which zone this business is in
+  let matchedZone: { id: string; name: string; neighborhood_id: string | null } | null = null;
 
-  // Count user's visits in this zone
-  const [progress] = await query<{ visited: string }>(
-    `SELECT COUNT(DISTINCT c.business_id) as visited
-     FROM check_ins c
-     JOIN businesses b ON b.id = c.business_id
-     JOIN zones z ON ST_Contains(z.boundary, b.location::geometry)
-     WHERE c.user_id = $1 AND z.id = $2`,
-    [userId, zone.id]
+  for (const zone of zones) {
+    const coords = JSON.parse(zone.boundary_coords) as [number, number][];
+    if (pointInPolygon(businessLng, businessLat, coords)) {
+      matchedZone = zone;
+      break;
+    }
+  }
+
+  if (!matchedZone) {
+    return { newZoneCaptured: false, newNeighborhoodCaptured: false };
+  }
+
+  // Check if zone already captured
+  const existingProgress = await queryOne<{ captured: boolean }>(
+    'SELECT captured FROM zone_progress WHERE user_id = $1 AND zone_id = $2',
+    [userId, matchedZone.id]
   );
 
-  const visited = parseInt(progress?.visited || '0');
-  const captureThreshold = Math.ceil(zone.total_locations * 0.6); // 60% to capture
-  const captured = visited >= captureThreshold;
+  if (existingProgress?.captured) {
+    return { newZoneCaptured: false, newNeighborhoodCaptured: false };
+  }
 
-  // Upsert zone progress
+  // Capture the zone!
   await query(
-    `INSERT INTO zone_progress (user_id, zone_id, locations_visited, captured, updated_at)
-     VALUES ($1, $2, $3, $4, NOW())
+    `INSERT INTO zone_progress (user_id, zone_id, captured, captured_at)
+     VALUES ($1, $2, true, NOW())
      ON CONFLICT (user_id, zone_id)
-     DO UPDATE SET locations_visited = $3, captured = $4, updated_at = NOW()`,
-    [userId, zone.id, visited, captured]
+     DO UPDATE SET captured = true, captured_at = NOW()`,
+    [userId, matchedZone.id]
   );
+
+  let neighborhoodName: string | undefined;
+  let newNeighborhoodCaptured = false;
+
+  // Check if this completes a neighborhood
+  if (matchedZone.neighborhood_id) {
+    // Get neighborhood info
+    const neighborhood = await queryOne<{ id: string; name: string }>(
+      'SELECT id, name FROM neighborhoods WHERE id = $1',
+      [matchedZone.neighborhood_id]
+    );
+    neighborhoodName = neighborhood?.name;
+
+    // Count total zones in neighborhood
+    const [totalResult] = await query<{ count: string }>(
+      'SELECT COUNT(*) as count FROM zones WHERE neighborhood_id = $1',
+      [matchedZone.neighborhood_id]
+    );
+    const totalZones = parseInt(totalResult?.count || '0');
+
+    // Count captured zones in neighborhood
+    const [capturedResult] = await query<{ count: string }>(
+      `SELECT COUNT(*) as count
+       FROM zone_progress zp
+       JOIN zones z ON z.id = zp.zone_id
+       WHERE zp.user_id = $1 AND z.neighborhood_id = $2 AND zp.captured = true`,
+      [userId, matchedZone.neighborhood_id]
+    );
+    const capturedZones = parseInt(capturedResult?.count || '0');
+
+    // Update neighborhood progress
+    const alreadyFullyCaptured = await queryOne<{ fully_captured: boolean }>(
+      'SELECT fully_captured FROM neighborhood_progress WHERE user_id = $1 AND neighborhood_id = $2',
+      [userId, matchedZone.neighborhood_id]
+    );
+
+    const isNowFullyCaptured = capturedZones >= totalZones && totalZones > 0;
+    newNeighborhoodCaptured = isNowFullyCaptured && !alreadyFullyCaptured?.fully_captured;
+
+    await query(
+      `INSERT INTO neighborhood_progress (user_id, neighborhood_id, zones_captured, total_zones, fully_captured, captured_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (user_id, neighborhood_id)
+       DO UPDATE SET zones_captured = $3, total_zones = $4, fully_captured = $5,
+                     captured_at = CASE WHEN $5 AND NOT neighborhood_progress.fully_captured THEN NOW() ELSE neighborhood_progress.captured_at END`,
+      [userId, matchedZone.neighborhood_id, capturedZones, totalZones, isNowFullyCaptured, isNowFullyCaptured ? new Date() : null]
+    );
+  }
 
   return {
-    zoneId: zone.id,
-    zoneName: zone.name,
-    visited,
-    total: zone.total_locations,
-    captureThreshold,
-    captured
+    newZoneCaptured: true,
+    zoneId: matchedZone.id,
+    zoneName: matchedZone.name,
+    neighborhoodId: matchedZone.neighborhood_id || undefined,
+    neighborhoodName,
+    newNeighborhoodCaptured
   };
 }

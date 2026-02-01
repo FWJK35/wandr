@@ -4,9 +4,6 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const migrations = [
-  // Enable PostGIS extension
-  `CREATE EXTENSION IF NOT EXISTS postgis;`,
-
   // Users table
   `CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY,
@@ -23,7 +20,7 @@ const migrations = [
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   );`,
 
-  // Businesses table with PostGIS location
+  // Businesses table with lat/lng columns
   `CREATE TABLE IF NOT EXISTS businesses (
     id UUID PRIMARY KEY,
     owner_id UUID REFERENCES users(id),
@@ -31,7 +28,8 @@ const migrations = [
     description TEXT,
     category VARCHAR(100) NOT NULL,
     address TEXT NOT NULL,
-    location GEOGRAPHY(POINT, 4326) NOT NULL,
+    latitude DOUBLE PRECISION NOT NULL,
+    longitude DOUBLE PRECISION NOT NULL,
     image_url TEXT,
     phone VARCHAR(50),
     website TEXT,
@@ -43,15 +41,17 @@ const migrations = [
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   );`,
 
-  // Create spatial index for businesses
-  `CREATE INDEX IF NOT EXISTS idx_businesses_location ON businesses USING GIST(location);`,
+  // Create index for businesses location
+  `CREATE INDEX IF NOT EXISTS idx_businesses_lat ON businesses(latitude);`,
+  `CREATE INDEX IF NOT EXISTS idx_businesses_lng ON businesses(longitude);`,
 
   // Check-ins table
   `CREATE TABLE IF NOT EXISTS check_ins (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
-    location GEOGRAPHY(POINT, 4326) NOT NULL,
+    latitude DOUBLE PRECISION NOT NULL,
+    longitude DOUBLE PRECISION NOT NULL,
     points_earned INTEGER NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   );`,
@@ -110,26 +110,46 @@ const migrations = [
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   );`,
 
-  // Zones table with polygon boundary
+  // Neighborhoods table (larger containing areas)
+  `CREATE TABLE IF NOT EXISTS neighborhoods (
+    id UUID PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    boundary_coords JSONB NOT NULL,
+    bonus_points INTEGER DEFAULT 50,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  );`,
+
+  // Zones table with polygon coordinates and neighborhood reference
   `CREATE TABLE IF NOT EXISTS zones (
     id UUID PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     description TEXT,
-    boundary GEOGRAPHY(POLYGON, 4326) NOT NULL,
+    neighborhood_id UUID REFERENCES neighborhoods(id) ON DELETE SET NULL,
+    boundary_coords JSONB NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   );`,
 
-  `CREATE INDEX IF NOT EXISTS idx_zones_boundary ON zones USING GIST(boundary);`,
+  `CREATE INDEX IF NOT EXISTS idx_zones_neighborhood ON zones(neighborhood_id);`,
 
-  // Zone progress table
+  // Zone progress table (simplified - captured when any business visited)
   `CREATE TABLE IF NOT EXISTS zone_progress (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     zone_id UUID NOT NULL REFERENCES zones(id) ON DELETE CASCADE,
-    locations_visited INTEGER DEFAULT 0,
     captured BOOLEAN DEFAULT FALSE,
     captured_at TIMESTAMP WITH TIME ZONE,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     PRIMARY KEY(user_id, zone_id)
+  );`,
+
+  // Neighborhood progress table
+  `CREATE TABLE IF NOT EXISTS neighborhood_progress (
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    neighborhood_id UUID NOT NULL REFERENCES neighborhoods(id) ON DELETE CASCADE,
+    zones_captured INTEGER DEFAULT 0,
+    total_zones INTEGER DEFAULT 0,
+    fully_captured BOOLEAN DEFAULT FALSE,
+    captured_at TIMESTAMP WITH TIME ZONE,
+    PRIMARY KEY(user_id, neighborhood_id)
   );`,
 
   // Badges table

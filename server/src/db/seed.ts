@@ -6,8 +6,6 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Sample data for Providence, RI area (Brown University)
-const PROVIDENCE_CENTER = { lat: 41.8268, lng: -71.4025 };
-
 const sampleBusinesses = [
   // Cafes
   { name: 'Blue State Coffee', category: 'Cafe', address: '300 Thayer St, Providence, RI', lat: 41.8270, lng: -71.4007 },
@@ -19,12 +17,12 @@ const sampleBusinesses = [
   { name: 'East Side Pockets', category: 'Restaurant', address: '278 Thayer St, Providence, RI', lat: 41.8266, lng: -71.4010 },
   { name: 'Kabob and Curry', category: 'Restaurant', address: '261 Thayer St, Providence, RI', lat: 41.8262, lng: -71.4014 },
   { name: 'Chipotle', category: 'Restaurant', address: '234 Thayer St, Providence, RI', lat: 41.8258, lng: -71.4018 },
-  { name: 'Antonio\'s Pizza', category: 'Restaurant', address: '138 Brook St, Providence, RI', lat: 41.8254, lng: -71.3989 },
+  { name: "Antonio's Pizza", category: 'Restaurant', address: '138 Brook St, Providence, RI', lat: 41.8254, lng: -71.3989 },
   { name: 'Den Den', category: 'Restaurant', address: '180 Angell St, Providence, RI', lat: 41.8280, lng: -71.4015 },
   { name: 'Kartabar', category: 'Restaurant', address: '284 Thayer St, Providence, RI', lat: 41.8268, lng: -71.4008 },
 
   // Bars
-  { name: 'The GCB (Graduate Center Bar)', category: 'Bar', address: '93 Thayer St, Providence, RI', lat: 41.8242, lng: -71.4002 },
+  { name: 'The GCB', category: 'Bar', address: '93 Thayer St, Providence, RI', lat: 41.8242, lng: -71.4002 },
   { name: 'The Ivy', category: 'Bar', address: '232 Westminster St, Providence, RI', lat: 41.8241, lng: -71.4096 },
   { name: 'The Avery', category: 'Bar', address: '18 Luongo Memorial Sq, Providence, RI', lat: 41.8236, lng: -71.4109 },
 
@@ -52,50 +50,181 @@ const sampleBusinesses = [
   { name: 'India Point Park', category: 'Park', address: '100 India St, Providence, RI', lat: 41.8185, lng: -71.3920 }
 ];
 
-const sampleZones = [
+// Neighborhoods - larger containing areas
+const sampleNeighborhoods = [
   {
     name: 'College Hill',
     description: 'The historic College Hill neighborhood, home to Brown University and RISD',
-    // Simple polygon around College Hill
-    boundary: [
-      [-71.4100, 41.8320],
-      [-71.3950, 41.8320],
-      [-71.3950, 41.8180],
-      [-71.4100, 41.8180],
-      [-71.4100, 41.8320]
+    // Larger polygon encompassing the whole area
+    coordinates: [
+      [-71.4120, 41.8180],
+      [-71.3940, 41.8180],
+      [-71.3940, 41.8320],
+      [-71.4120, 41.8320],
+      [-71.4120, 41.8180]
     ]
   },
   {
     name: 'Downtown Providence',
     description: 'The heart of Providence with shopping, dining, and entertainment',
-    boundary: [
-      [-71.4180, 41.8280],
-      [-71.4050, 41.8280],
-      [-71.4050, 41.8200],
+    coordinates: [
       [-71.4180, 41.8200],
-      [-71.4180, 41.8280]
-    ]
-  },
-  {
-    name: 'Thayer Street',
-    description: 'The vibrant commercial district near Brown University',
-    boundary: [
-      [-71.4040, 41.8290],
-      [-71.3990, 41.8290],
-      [-71.3990, 41.8240],
-      [-71.4040, 41.8240],
-      [-71.4040, 41.8290]
+      [-71.4050, 41.8200],
+      [-71.4050, 41.8300],
+      [-71.4180, 41.8300],
+      [-71.4180, 41.8200]
     ]
   },
   {
     name: 'Fox Point',
     description: 'Historic waterfront neighborhood with diverse dining options',
-    boundary: [
+    coordinates: [
+      [-71.4020, 41.8140],
+      [-71.3880, 41.8140],
+      [-71.3880, 41.8220],
       [-71.4020, 41.8220],
-      [-71.3900, 41.8220],
-      [-71.3900, 41.8150],
-      [-71.4020, 41.8150],
-      [-71.4020, 41.8220]
+      [-71.4020, 41.8140]
+    ]
+  }
+];
+
+// Zones - smaller areas within neighborhoods (irregular shapes)
+const sampleZones = [
+  // College Hill zones
+  {
+    name: 'College Hill - Thayer Street',
+    neighborhood: 'College Hill',
+    description: 'The vibrant commercial corridor near Brown University',
+    coordinates: [
+      [-71.4030, 41.8240],
+      [-71.3995, 41.8240],
+      [-71.3995, 41.8280],
+      [-71.4030, 41.8280],
+      [-71.4030, 41.8240]
+    ]
+  },
+  {
+    name: 'College Hill - Brown Campus',
+    neighborhood: 'College Hill',
+    description: 'Brown University main campus area',
+    coordinates: [
+      [-71.4025, 41.8280],
+      [-71.3975, 41.8280],
+      [-71.3975, 41.8320],
+      [-71.4025, 41.8320],
+      [-71.4025, 41.8280]
+    ]
+  },
+  {
+    name: 'College Hill - RISD',
+    neighborhood: 'College Hill',
+    description: 'Rhode Island School of Design campus and museum area',
+    coordinates: [
+      [-71.4100, 41.8250],
+      [-71.4050, 41.8250],
+      [-71.4050, 41.8290],
+      [-71.4100, 41.8290],
+      [-71.4100, 41.8250]
+    ]
+  },
+  {
+    name: 'College Hill - Benefit Street',
+    neighborhood: 'College Hill',
+    description: 'Historic mile of architecture and cultural institutions',
+    coordinates: [
+      [-71.4080, 41.8210],
+      [-71.4050, 41.8210],
+      [-71.4050, 41.8260],
+      [-71.4080, 41.8260],
+      [-71.4080, 41.8210]
+    ]
+  },
+  {
+    name: 'College Hill - Hope Street',
+    neighborhood: 'College Hill',
+    description: 'Residential area with local shops and cafes',
+    coordinates: [
+      [-71.4000, 41.8280],
+      [-71.3960, 41.8280],
+      [-71.3960, 41.8320],
+      [-71.4000, 41.8320],
+      [-71.4000, 41.8280]
+    ]
+  },
+
+  // Downtown Providence zones
+  {
+    name: 'Downtown - Westminster Street',
+    neighborhood: 'Downtown Providence',
+    description: 'Main shopping and dining district',
+    coordinates: [
+      [-71.4130, 41.8230],
+      [-71.4080, 41.8230],
+      [-71.4080, 41.8260],
+      [-71.4130, 41.8260],
+      [-71.4130, 41.8230]
+    ]
+  },
+  {
+    name: 'Downtown - Waterplace',
+    neighborhood: 'Downtown Providence',
+    description: 'Waterfront park and entertainment district',
+    coordinates: [
+      [-71.4170, 41.8260],
+      [-71.4120, 41.8260],
+      [-71.4120, 41.8300],
+      [-71.4170, 41.8300],
+      [-71.4170, 41.8260]
+    ]
+  },
+  {
+    name: 'Downtown - Providence Place',
+    neighborhood: 'Downtown Providence',
+    description: 'Shopping mall and surrounding area',
+    coordinates: [
+      [-71.4180, 41.8280],
+      [-71.4140, 41.8280],
+      [-71.4140, 41.8310],
+      [-71.4180, 41.8310],
+      [-71.4180, 41.8280]
+    ]
+  },
+  {
+    name: 'Downtown - Financial District',
+    neighborhood: 'Downtown Providence',
+    description: 'Business center with restaurants and bars',
+    coordinates: [
+      [-71.4120, 41.8200],
+      [-71.4070, 41.8200],
+      [-71.4070, 41.8240],
+      [-71.4120, 41.8240],
+      [-71.4120, 41.8200]
+    ]
+  },
+
+  // Fox Point zones
+  {
+    name: 'Fox Point - Wickenden Street',
+    neighborhood: 'Fox Point',
+    description: 'Artsy street with cafes, galleries, and vintage shops',
+    coordinates: [
+      [-71.4010, 41.8180],
+      [-71.3960, 41.8180],
+      [-71.3960, 41.8210],
+      [-71.4010, 41.8210],
+      [-71.4010, 41.8180]
+    ]
+  },
+  {
+    name: 'Fox Point - India Point',
+    neighborhood: 'Fox Point',
+    description: 'Waterfront park with scenic views',
+    coordinates: [
+      [-71.3950, 41.8160],
+      [-71.3900, 41.8160],
+      [-71.3900, 41.8200],
+      [-71.3950, 41.8200],
+      [-71.3950, 41.8160]
     ]
   }
 ];
@@ -111,6 +240,7 @@ const sampleBadges = [
   { name: 'Night Owl', description: 'Check in after 10 PM', type: 'special', icon: '🦉' },
   { name: 'Early Bird', description: 'Check in before 7 AM', type: 'special', icon: '🐦' },
   { name: 'Zone Captain', description: 'Capture your first zone', type: 'achievement', icon: '🏆' },
+  { name: 'Neighborhood Hero', description: 'Capture an entire neighborhood', type: 'achievement', icon: '🦸' },
   { name: 'Streak Master', description: 'Maintain a 7-day streak', type: 'streak', icon: '🔥' },
   { name: 'Social Butterfly', description: 'Add 5 friends', type: 'social', icon: '🦋' }
 ];
@@ -145,11 +275,18 @@ const sampleQuests = [
     points: 100
   },
   {
-    title: 'Neighborhood Navigator',
-    description: 'Capture your first neighborhood zone',
+    title: 'Zone Conqueror',
+    description: 'Capture your first zone',
     type: 'capture',
     requirements: { zoneCaptureCount: 1 },
     points: 75
+  },
+  {
+    title: 'Neighborhood Champion',
+    description: 'Capture all zones in a neighborhood',
+    type: 'neighborhood',
+    requirements: { neighborhoodCaptureCount: 1 },
+    points: 150
   }
 ];
 
@@ -190,13 +327,28 @@ async function seed() {
       const id = uuidv4();
       businessIds.push(id);
       await client.query(
-        `INSERT INTO businesses (id, name, category, address, location, is_verified, created_at)
-         VALUES ($1, $2, $3, $4, ST_SetSRID(ST_MakePoint($5, $6), 4326), true, NOW())
+        `INSERT INTO businesses (id, name, category, address, latitude, longitude, is_verified, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, true, NOW())
          ON CONFLICT DO NOTHING`,
-        [id, biz.name, biz.category, biz.address, biz.lng, biz.lat]
+        [id, biz.name, biz.category, biz.address, biz.lat, biz.lng]
       );
     }
     console.log(`✅ Created ${sampleBusinesses.length} businesses`);
+
+    // Create neighborhoods
+    console.log('Creating neighborhoods...');
+    const neighborhoodIds: Map<string, string> = new Map();
+    for (const hood of sampleNeighborhoods) {
+      const id = uuidv4();
+      neighborhoodIds.set(hood.name, id);
+      await client.query(
+        `INSERT INTO neighborhoods (id, name, description, boundary_coords, created_at)
+         VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT DO NOTHING`,
+        [id, hood.name, hood.description, JSON.stringify(hood.coordinates)]
+      );
+    }
+    console.log(`✅ Created ${sampleNeighborhoods.length} neighborhoods`);
 
     // Create zones
     console.log('Creating zones...');
@@ -204,12 +356,12 @@ async function seed() {
     for (const zone of sampleZones) {
       const id = uuidv4();
       zoneIds.push(id);
-      const polygonWKT = `POLYGON((${zone.boundary.map(p => `${p[0]} ${p[1]}`).join(', ')}))`;
+      const neighborhoodId = neighborhoodIds.get(zone.neighborhood) || null;
       await client.query(
-        `INSERT INTO zones (id, name, description, boundary, created_at)
-         VALUES ($1, $2, $3, ST_SetSRID(ST_GeomFromText($4), 4326), NOW())
+        `INSERT INTO zones (id, name, description, neighborhood_id, boundary_coords, created_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
          ON CONFLICT DO NOTHING`,
-        [id, zone.name, zone.description, polygonWKT]
+        [id, zone.name, zone.description, neighborhoodId, JSON.stringify(zone.coordinates)]
       );
     }
     console.log(`✅ Created ${sampleZones.length} zones`);
@@ -247,7 +399,6 @@ async function seed() {
     let checkinCount = 0;
     for (let i = 0; i < Math.min(userIds.length, 3); i++) {
       const userId = userIds[i];
-      // Random subset of businesses
       const numCheckins = Math.floor(Math.random() * 10) + 5;
       const shuffled = [...businessIds].sort(() => Math.random() - 0.5);
 
@@ -258,10 +409,10 @@ async function seed() {
         const points = Math.random() > 0.5 ? 10 : 5;
 
         await client.query(
-          `INSERT INTO check_ins (id, user_id, business_id, location, points_earned, created_at)
-           VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326), $6, NOW() - INTERVAL '${daysAgo} days')
+          `INSERT INTO check_ins (id, user_id, business_id, latitude, longitude, points_earned, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, NOW() - INTERVAL '${daysAgo} days')
            ON CONFLICT DO NOTHING`,
-          [uuidv4(), userId, businessId, biz.lng, biz.lat, points]
+          [uuidv4(), userId, businessId, biz.lat, biz.lng, points]
         );
         checkinCount++;
       }
@@ -297,7 +448,6 @@ async function seed() {
     // Award some badges to demo users
     console.log('Awarding sample badges...');
     if (userIds.length > 0 && badgeIds.length > 0) {
-      // First user gets first badge
       await client.query(
         `INSERT INTO user_badges (user_id, badge_id, earned_at) VALUES ($1, $2, NOW())
          ON CONFLICT DO NOTHING`,

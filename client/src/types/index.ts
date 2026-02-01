@@ -47,11 +47,22 @@ export interface Zone {
   id: string;
   name: string;
   description?: string;
+  neighborhoodId?: string;
+  neighborhoodName?: string;
   boundary: GeoJSONPolygon;
-  totalLocations: number;
-  visited: number;
   captured: boolean;
-  captureThreshold: number;
+}
+
+export interface Neighborhood {
+  id: string;
+  name: string;
+  description?: string;
+  boundary: GeoJSONPolygon;
+  bonusPoints: number;
+  totalZones: number;
+  capturedZones: number;
+  percentCaptured: number;
+  fullyCaptured: boolean;
 }
 
 export interface Quest {
@@ -176,11 +187,13 @@ export interface LeaderboardEntry {
   points: number;
   level?: number;
   zonesCaptured?: number;
+  neighborhoodsCaptured?: number;
 }
 
 export interface UserStats {
   checkins: number;
   zonesCaptured: number;
+  neighborhoodsCaptured: number;
   badgesEarned: number;
   totalCheckins?: number;
   uniquePlaces?: number;
@@ -193,5 +206,7 @@ export interface PointsBreakdown {
   friendBonus: number;
   promotionBonus: number;
   streakBonus: number;
+  zoneCaptureBonus?: number;
+  neighborhoodBonus?: number;
   total: number;
 }

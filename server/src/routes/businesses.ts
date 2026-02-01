@@ -4,6 +4,19 @@ import { optionalAuth, AuthRequest } from '../middleware/auth.js';
 
 export const businessesRouter = Router();
 
+// Helper function to calculate distance in meters using Haversine formula
+function calculateDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000; // Earth's radius in meters
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 // GET /api/businesses - Get nearby businesses
 businessesRouter.get('/', optionalAuth, async (req: AuthRequest, res: Response) => {
   try {
@@ -17,15 +30,18 @@ businessesRouter.get('/', optionalAuth, async (req: AuthRequest, res: Response) 
       return res.status(400).json({ error: 'lat and lng are required' });
     }
 
+    // Calculate bounding box for efficient query
+    const latDelta = radius / 111320;
+    const lngDelta = radius / (111320 * Math.cos(lat * Math.PI / 180));
+
     let categoryFilter = '';
-    const params: any[] = [lng, lat, radius, limit];
+    const params: any[] = [lat - latDelta, lat + latDelta, lng - lngDelta, lng + lngDelta, limit];
 
     if (category) {
-      categoryFilter = 'AND category = $5';
+      categoryFilter = 'AND category = $6';
       params.push(category);
     }
 
-    // PostGIS query for nearby businesses
     const businesses = await query<{
       id: string;
       name: string;
@@ -36,21 +52,28 @@ businessesRouter.get('/', optionalAuth, async (req: AuthRequest, res: Response) 
       longitude: number;
       image_url: string | null;
       is_boosted: boolean;
-      distance: number;
     }>(
-      `SELECT
-        id, name, description, category, address,
-        ST_Y(location::geometry) as latitude,
-        ST_X(location::geometry) as longitude,
-        image_url, is_boosted,
-        ST_Distance(location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) as distance
+      `SELECT id, name, description, category, address, latitude, longitude, image_url, is_boosted
        FROM businesses
-       WHERE ST_DWithin(location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)
+       WHERE latitude BETWEEN $1 AND $2
+       AND longitude BETWEEN $3 AND $4
        ${categoryFilter}
-       ORDER BY is_boosted DESC, distance ASC
-       LIMIT $4`,
+       ORDER BY is_boosted DESC
+       LIMIT $5`,
       params
     );
+
+    // Calculate distance and filter by radius
+    const businessesWithDistance = businesses
+      .map(b => ({
+        ...b,
+        distance: calculateDistanceMeters(lat, lng, b.latitude, b.longitude)
+      }))
+      .filter(b => b.distance <= radius)
+      .sort((a, b) => {
+        if (a.is_boosted !== b.is_boosted) return b.is_boosted ? 1 : -1;
+        return a.distance - b.distance;
+      });
 
     // If user is logged in, check which businesses they've visited
     let visitedIds: Set<string> = new Set();
@@ -62,7 +85,7 @@ businessesRouter.get('/', optionalAuth, async (req: AuthRequest, res: Response) 
       visitedIds = new Set(visited.map(v => v.business_id));
     }
 
-    res.json(businesses.map(b => ({
+    res.json(businessesWithDistance.map(b => ({
       id: b.id,
       name: b.name,
       description: b.description,
@@ -101,11 +124,8 @@ businessesRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Respons
       is_boosted: boolean;
       owner_id: string | null;
     }>(
-      `SELECT
-        id, name, description, category, address,
-        ST_Y(location::geometry) as latitude,
-        ST_X(location::geometry) as longitude,
-        image_url, phone, website, hours, is_boosted, owner_id
+      `SELECT id, name, description, category, address, latitude, longitude,
+              image_url, phone, website, hours, is_boosted, owner_id
        FROM businesses
        WHERE id = $1`,
       [id]

@@ -9,20 +9,18 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@react-google-maps/api": "^2.19.2",
-    "@react-three/drei": "^9.88.17",
-    "@react-three/fiber": "^8.15.12",
     "axios": "^1.6.2",
+    "mapbox-gl": "^3.0.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-map-gl": "^7.1.6",
     "react-router-dom": "^6.21.0",
-    "three": "^0.159.0",
     "zustand": "^4.4.7"
   },
   "devDependencies": {
+    "@types/mapbox-gl": "^3.4.1",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
-    "@types/three": "^0.159.0",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.16",
     "postcss": "^8.4.32",

@@ -22,7 +22,15 @@ export default function BusinessPanel({ business, userLocation, onClose }: Busin
   const [checkinResult, setCheckinResult] = useState<{
     points: PointsBreakdown;
     isFirstVisit: boolean;
-    zoneProgress?: any;
+    zoneCapture?: {
+      zoneId: string;
+      zoneName: string;
+      neighborhoodName?: string;
+    };
+    neighborhoodCapture?: {
+      neighborhoodId: string;
+      neighborhoodName: string;
+    };
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -139,21 +147,36 @@ export default function BusinessPanel({ business, userLocation, onClose }: Busin
                     <span className="ml-1 text-orange-400">+{checkinResult.points.streakBonus}</span>
                   </div>
                 )}
+                {checkinResult.points.zoneCaptureBonus && checkinResult.points.zoneCaptureBonus > 0 && (
+                  <div>
+                    <span className="text-gray-400">Zone:</span>
+                    <span className="ml-1 text-green-400">+{checkinResult.points.zoneCaptureBonus}</span>
+                  </div>
+                )}
+                {checkinResult.points.neighborhoodBonus && checkinResult.points.neighborhoodBonus > 0 && (
+                  <div>
+                    <span className="text-gray-400">Hood:</span>
+                    <span className="ml-1 text-emerald-400">+{checkinResult.points.neighborhoodBonus}</span>
+                  </div>
+                )}
                 <div className="col-span-2 pt-2 border-t border-white/10">
                   <span className="font-semibold text-primary-400">Total: +{checkinResult.points.total} points</span>
                 </div>
               </div>
-              {checkinResult.zoneProgress && (
+              {checkinResult.zoneCapture && (
                 <div className="mt-2 pt-2 border-t border-white/10">
-                  <p className="text-sm">
-                    <span className="text-gray-400">{checkinResult.zoneProgress.zoneName}:</span>
-                    <span className="ml-1 text-white">
-                      {checkinResult.zoneProgress.visited}/{checkinResult.zoneProgress.total} visited
-                    </span>
-                    {checkinResult.zoneProgress.captured && (
-                      <span className="ml-2 text-primary-400">🏆 Captured!</span>
-                    )}
-                  </p>
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-green-400">🏆</span>
+                    <span className="text-green-300">Zone Captured: {checkinResult.zoneCapture.zoneName}</span>
+                  </div>
+                </div>
+              )}
+              {checkinResult.neighborhoodCapture && (
+                <div className="mt-2 pt-2 border-t border-white/10">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-emerald-400">🏅</span>
+                    <span className="text-emerald-300">Neighborhood Complete: {checkinResult.neighborhoodCapture.neighborhoodName}!</span>
+                  </div>
                 </div>
               )}
             </div>
