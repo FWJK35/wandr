@@ -82,7 +82,7 @@ export default function Profile() {
 
         {/* Level badge */}
         <div className="inline-flex items-center gap-2 mt-3 px-4 py-2 bg-dark-100 rounded-full">
-          <span className="text-lg">⭐</span>
+          <Icon name="level" />
           <span className="font-semibold">Level {profile.level}</span>
           <span className="text-primary-400">{profile.points} pts</span>
         </div>
@@ -96,17 +96,17 @@ export default function Profile() {
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard icon="📍" label="Check-ins" value={stats?.totalCheckins || stats?.checkins || 0} />
-        <StatCard icon="🗺️" label="Places" value={stats?.uniquePlaces || 0} />
-        <StatCard icon="🏆" label="Zones" value={stats?.zonesCaptured || 0} />
-        <StatCard icon="🎖️" label="Badges" value={stats?.badgesEarned || badges.length} />
+        <StatCard icon="pin" label="Check-ins" value={stats?.totalCheckins || stats?.checkins || 0} />
+        <StatCard icon="map" label="Places" value={stats?.uniquePlaces || 0} />
+        <StatCard icon="trophy" label="Zones" value={stats?.zonesCaptured || 0} />
+        <StatCard icon="medal" label="Badges" value={stats?.badgesEarned || badges.length} />
       </div>
 
       {/* Streak */}
       {isOwnProfile && profile.streakDays > 0 && (
         <Card>
           <div className="flex items-center gap-4">
-            <div className="text-4xl">🔥</div>
+            <Icon name="streak" large />
             <div>
               <p className="font-semibold text-lg">{profile.streakDays} Day Streak</p>
               <p className="text-sm text-gray-400">Keep exploring to maintain it!</p>
@@ -153,7 +153,7 @@ export default function Profile() {
                 }`}
               >
                 <span className="w-6 text-center font-semibold">
-                  {entry.rank <= 3 ? ['🥇', '🥈', '🥉'][entry.rank - 1] : entry.rank}
+                  {entry.rank <= 3 ? <MedalIcon rank={entry.rank} /> : entry.rank}
                 </span>
                 <div className="w-8 h-8 rounded-full bg-dark-200 flex items-center justify-center">
                   <span className="text-sm">{entry.displayName?.charAt(0)}</span>
@@ -184,9 +184,83 @@ export default function Profile() {
 function StatCard({ icon, label, value }: { icon: string; label: string; value: number }) {
   return (
     <Card className="text-center">
-      <span className="text-2xl mb-1 block">{icon}</span>
+      <span className="mb-1 block flex justify-center">
+        <Icon name={icon} />
+      </span>
       <p className="text-xl font-bold">{value}</p>
       <p className="text-xs text-gray-400">{label}</p>
     </Card>
   );
+}
+
+function MedalIcon({ rank }: { rank: number }) {
+  const colors = ['#f5c542', '#c0c4cc', '#c08a5d'];
+  const fill = colors[rank - 1] || '#9ca3af';
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="9" r="4" fill={fill} />
+      <path d="M8 3h8l-2 4h-4L8 3Z" />
+      <path d="M10 13v7l2-1 2 1v-7" />
+    </svg>
+  );
+}
+
+function Icon({ name, large = false }: { name: string; large?: boolean }) {
+  const size = large ? 32 : 20;
+  const stroke = 'currentColor';
+  switch (name) {
+    case 'pin':
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+          <path d="M12 21s7-5 7-11a7 7 0 1 0-14 0c0 6 7 11 7 11Z" />
+        </svg>
+      );
+    case 'map':
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 3 3 5v16l6-2 6 2 6-2V3l-6 2-6-2Z" />
+          <path d="M9 3v16" />
+          <path d="M15 5v16" />
+        </svg>
+      );
+    case 'trophy':
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M8 4h8v4a4 4 0 0 1-4 4 4 4 0 0 1-4-4V4Z" />
+          <path d="M6 4h12" />
+          <path d="M7 20h10" />
+          <path d="M12 12v3" />
+          <path d="M9 21v-4h6v4" />
+          <path d="M4 6h2v2a2 2 0 0 1-2-2Z" />
+          <path d="M20 6h-2v2a2 2 0 0 0 2-2Z" />
+        </svg>
+      );
+    case 'medal':
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="9" r="4" />
+          <path d="M8 3h8l-2 4h-4L8 3Z" />
+          <path d="M10 13v7l2-1 2 1v-7" />
+        </svg>
+      );
+    case 'level':
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 17h16" />
+          <path d="M6 17V7h5v10" />
+          <path d="M13 17V4h5v13" />
+          <path d="M6 10h5" />
+          <path d="M13 7h5" />
+        </svg>
+      );
+    case 'streak':
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M7 3c0 5 4 6 4 9 0 2-2 4-2 6a3 3 0 1 0 6 0c0-1-1-2.5-1-4 0-2 3-4 3-8a5 5 0 0 0-5-5c-2 0-5 1.5-5 5Z" />
+        </svg>
+      );
+    default:
+      return null;
+  }
 }
