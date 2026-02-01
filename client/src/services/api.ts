@@ -158,6 +158,20 @@ export const checkinsApi = {
       neighborhoodCapture?: {
         neighborhoodName: string;
       };
+      questCompletions?: {
+        questId: string;
+        questTitle?: string;
+        pointsEarned: number;
+        badgeEarned?: string | null;
+      }[];
+      questRedemption?: {
+        questId: string;
+        businessId: string;
+        title: string;
+        shortPrompt: string;
+        suggestedPercentOff?: number | null;
+        endsAt: string;
+      } | null;
       zoneProgress?: {
         zoneId: string;
         zoneName: string;

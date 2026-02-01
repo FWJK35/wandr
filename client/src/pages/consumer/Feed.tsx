@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { socialApi } from '../../services/api';
 import type { FeedItem } from '../../types';
 import Card from '../../components/shared/Card';
@@ -12,11 +12,7 @@ export default function Feed() {
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchFeed();
-  }, [feedType]);
-
-  async function fetchFeed() {
+  const fetchFeed = useCallback(async () => {
     setLoading(true);
     try {
       const data = await socialApi.getFeed(feedType);
@@ -29,7 +25,19 @@ export default function Feed() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [feedType]);
+
+  useEffect(() => {
+    fetchFeed();
+  }, [feedType, fetchFeed]);
+
+  useEffect(() => {
+    const handleRefresh = () => {
+      fetchFeed();
+    };
+    window.addEventListener('wandr:feed-refresh', handleRefresh);
+    return () => window.removeEventListener('wandr:feed-refresh', handleRefresh);
+  }, [fetchFeed]);
 
   async function handleLike(itemId: string) {
     const target = items.find((i) => i.id === itemId);

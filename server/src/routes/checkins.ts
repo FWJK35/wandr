@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { query, queryOne } from '../db/index.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { calculatePoints } from '../services/points.js';
+import { calculateQuestProgress, checkQuestComplete } from '../services/questProgress.js';
 
 export const checkinsRouter = Router();
 
@@ -11,6 +12,22 @@ const CHECKIN_COOLDOWN_HOURS = 24; // 24 hour cooldown per business
 const ZONE_CAPTURE_POINTS = 25; // Points for capturing a zone
 const NEIGHBORHOOD_CAPTURE_POINTS = 50; // Bonus points for capturing entire neighborhood
 const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN;
+
+type QuestCompletion = {
+  questId: string;
+  questTitle: string;
+  pointsEarned: number;
+  badgeEarned: string | null;
+};
+
+type GeneratedQuestMatch = {
+  quest_id: string;
+  business_id: string;
+  title: string;
+  short_prompt: string;
+  suggested_percent_off: number | null;
+  ends_at: Date;
+};
 
 // Helper function to calculate distance in meters using Haversine formula
 function calculateDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -129,6 +146,129 @@ async function getBusinessIdsInZone(coords: [number, number][]): Promise<string[
     .map((b) => b.id);
 }
 
+async function redeemActiveQuests(userId: string): Promise<QuestCompletion[]> {
+  const activeQuests = await query<{
+    id: string;
+    quest_id: string;
+    progress: any;
+  }>(
+    `SELECT id, quest_id, progress
+     FROM user_quests
+     WHERE user_id = $1 AND completed_at IS NULL`,
+    [userId]
+  );
+
+  if (activeQuests.length === 0) return [];
+
+  const completions: QuestCompletion[] = [];
+
+  for (const userQuest of activeQuests) {
+    const quest = await queryOne<{
+      requirements: any;
+      points_reward: number;
+      badge_reward_id: string | null;
+      title: string;
+    }>(
+      'SELECT requirements, points_reward, badge_reward_id, title FROM quests WHERE id = $1',
+      [userQuest.quest_id]
+    );
+
+    if (!quest) continue;
+
+    const updatedProgress = await calculateQuestProgress(userId, quest.requirements, userQuest.progress);
+    const isComplete = checkQuestComplete(quest.requirements, updatedProgress);
+
+    if (isComplete) {
+      await query(
+        `UPDATE user_quests SET progress = $1, completed_at = NOW() WHERE id = $2`,
+        [JSON.stringify(updatedProgress), userQuest.id]
+      );
+
+      await query(
+        'UPDATE users SET points = points + $1 WHERE id = $2',
+        [quest.points_reward, userId]
+      );
+
+      if (quest.badge_reward_id) {
+        await query(
+          `INSERT INTO user_badges (user_id, badge_id, earned_at)
+           VALUES ($1, $2, NOW())
+           ON CONFLICT DO NOTHING`,
+          [userId, quest.badge_reward_id]
+        );
+      }
+
+      const feedId = uuidv4();
+      await query(
+        `INSERT INTO feed_items (id, user_id, type, content, created_at)
+         VALUES ($1, $2, 'quest_complete', $3, NOW())`,
+        [feedId, userId, JSON.stringify({
+          questId: userQuest.quest_id,
+          pointsEarned: quest.points_reward
+        })]
+      );
+
+      completions.push({
+        questId: userQuest.quest_id,
+        questTitle: quest.title,
+        pointsEarned: quest.points_reward,
+        badgeEarned: quest.badge_reward_id
+      });
+    } else {
+      await query(
+        'UPDATE user_quests SET progress = $1 WHERE id = $2',
+        [JSON.stringify(updatedProgress), userQuest.id]
+      );
+    }
+  }
+
+  return completions;
+}
+
+async function findQuestEligibility(userId: string, businessId: string): Promise<{
+  eligible: boolean;
+  generatedQuest?: GeneratedQuestMatch;
+}> {
+  const generatedQuest = await queryOne<GeneratedQuestMatch>(
+    `SELECT quest_id, business_id, title, short_prompt, suggested_percent_off, ends_at
+     FROM generated_quests
+     WHERE business_id = $1 AND NOW() BETWEEN starts_at AND ends_at
+     ORDER BY starts_at DESC
+     LIMIT 1`,
+    [businessId]
+  );
+
+  if (generatedQuest) {
+    return { eligible: true, generatedQuest };
+  }
+
+  const activeQuests = await query<{
+    requirements: any;
+  }>(
+    `SELECT q.requirements
+     FROM user_quests uq
+     JOIN quests q ON q.id = uq.quest_id
+     WHERE uq.user_id = $1 AND uq.completed_at IS NULL`,
+    [userId]
+  );
+
+  for (const quest of activeQuests) {
+    const requirements = quest.requirements || {};
+    const specific = Array.isArray(requirements.specificBusinesses)
+      ? requirements.specificBusinesses
+      : [];
+    if (specific.includes(businessId)) {
+      return { eligible: true };
+    }
+
+    if (requirements.visitCount || requirements.uniqueCategories || requirements.zoneCaptures) {
+      return { eligible: true };
+    }
+  }
+
+  return { eligible: false };
+}
+
 // POST /api/checkins - Create a check-in
 checkinsRouter.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
@@ -180,6 +320,13 @@ checkinsRouter.post('/', authenticate, async (req: AuthRequest, res: Response) =
       return res.status(429).json({
         error: 'Check-in cooldown active',
         nextAvailable: nextAvailable.toISOString()
+      });
+    }
+
+    const questEligibility = await findQuestEligibility(userId, businessId);
+    if (!questEligibility.eligible) {
+      return res.status(403).json({
+        error: 'No active quest available for this location. Start or claim a quest to check in here.'
       });
     }
 
@@ -240,6 +387,9 @@ checkinsRouter.post('/', authenticate, async (req: AuthRequest, res: Response) =
       );
     }
 
+    const questCompletions = await redeemActiveQuests(userId);
+    const questBonusPoints = questCompletions.reduce((sum, q) => sum + q.pointsEarned, 0);
+
     // Create feed item
     const feedId = uuidv4();
     await query(
@@ -263,7 +413,8 @@ checkinsRouter.post('/', authenticate, async (req: AuthRequest, res: Response) =
         ...pointsBreakdown,
         zoneCaptureBonus: zoneCapture.newZoneCaptured ? ZONE_CAPTURE_POINTS : 0,
         neighborhoodBonus: zoneCapture.newNeighborhoodCaptured ? NEIGHBORHOOD_CAPTURE_POINTS : 0,
-        total: pointsBreakdown.total + bonusPoints
+        questBonus: questBonusPoints,
+        total: pointsBreakdown.total + bonusPoints + questBonusPoints
       },
       isFirstVisit,
       zoneCapture: zoneCapture.newZoneCaptured ? {
@@ -273,7 +424,18 @@ checkinsRouter.post('/', authenticate, async (req: AuthRequest, res: Response) =
       } : null,
       neighborhoodCapture: zoneCapture.newNeighborhoodCaptured ? {
         neighborhoodName: zoneCapture.neighborhoodName
-      } : null
+      } : null,
+      questCompletions,
+      questRedemption: questEligibility.generatedQuest
+        ? {
+            questId: questEligibility.generatedQuest.quest_id,
+            businessId: questEligibility.generatedQuest.business_id,
+            title: questEligibility.generatedQuest.title,
+            shortPrompt: questEligibility.generatedQuest.short_prompt,
+            suggestedPercentOff: questEligibility.generatedQuest.suggested_percent_off,
+            endsAt: questEligibility.generatedQuest.ends_at,
+          }
+        : null,
     });
   } catch (error) {
     console.error('Check-in error:', error);

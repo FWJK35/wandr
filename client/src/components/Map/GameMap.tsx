@@ -61,6 +61,7 @@ export default function GameMap() {
   const [neighborhoodsLoading, setNeighborhoodsLoading] = useState(false);
   const [neighborhoodsError, setNeighborhoodsError] = useState<string | null>(null);
   const [questBusinessIds, setQuestBusinessIds] = useState<Set<string>>(new Set());
+  const [activeQuestByBusiness, setActiveQuestByBusiness] = useState<Map<string, GeneratedQuest>>(new Map());
 
   const neighborhoodSummary = useMemo(() => {
     const zonesByNeighborhood = new Map<string, Zone[]>();
@@ -261,6 +262,23 @@ export default function GameMap() {
       const quests = await questsApi.getGeneratedActive();
       const ids = new Set<string>(quests.map((q: GeneratedQuest) => q.business_id));
       setQuestBusinessIds(ids);
+      const claimedIds = (() => {
+        try {
+          const raw = localStorage.getItem('claimed_generated_quests');
+          if (!raw) return new Set<string>();
+          const parsed = JSON.parse(raw);
+          return new Set<string>(Array.isArray(parsed) ? parsed : []);
+        } catch {
+          return new Set<string>();
+        }
+      })();
+      const claimedByBusiness = new Map<string, GeneratedQuest>();
+      quests.forEach((q: GeneratedQuest) => {
+        if (q.quest_id && claimedIds.has(q.quest_id) && q.business_id && !claimedByBusiness.has(q.business_id)) {
+          claimedByBusiness.set(q.business_id, q);
+        }
+      });
+      setActiveQuestByBusiness(claimedByBusiness);
     } catch (err) {
       console.warn('Failed to fetch generated quests for highlights', err);
     }
@@ -270,6 +288,12 @@ export default function GameMap() {
     fetchQuestHighlights();
     const interval = setInterval(fetchQuestHighlights, 60_000);
     return () => clearInterval(interval);
+  }, [fetchQuestHighlights]);
+
+  useEffect(() => {
+    const handleQuestClaim = () => fetchQuestHighlights();
+    window.addEventListener('wandr:quest-claim', handleQuestClaim);
+    return () => window.removeEventListener('wandr:quest-claim', handleQuestClaim);
   }, [fetchQuestHighlights]);
 
   useEffect(() => {
@@ -617,6 +641,7 @@ export default function GameMap() {
         <BusinessPanel
           business={selectedBusiness}
           userLocation={location}
+          activeQuest={activeQuestByBusiness.get(selectedBusiness.id) || null}
           onCheckInComplete={() => {
             if (location) {
               fetchData(location.latitude, location.longitude, true);

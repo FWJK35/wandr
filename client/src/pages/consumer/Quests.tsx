@@ -136,6 +136,7 @@ export default function Quests() {
       persistClaimedIds(ids);
       return next;
     });
+    window.dispatchEvent(new CustomEvent('wandr:quest-claim'));
     setTab('active');
     setTimeout(() => setClaimingId(null), 300);
   }

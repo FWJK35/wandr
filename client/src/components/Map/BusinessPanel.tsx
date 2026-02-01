@@ -2,25 +2,27 @@ import { useState, useEffect } from 'react';
 import { businessesApi, checkinsApi } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { calculateDistance, formatDistance } from '../../hooks/useLocation';
-import type { Business, PointsBreakdown } from '../../types';
+import type { Business, GeneratedQuest, PointsBreakdown } from '../../types';
 import Button from '../shared/Button';
 import LoadingSpinner from '../shared/LoadingSpinner';
 
 interface BusinessPanelProps {
   business: Business;
   userLocation: { latitude: number; longitude: number } | null;
+  activeQuest?: GeneratedQuest | null;
   onCheckInComplete?: () => void;
   onClose: () => void;
 }
 
 const CHECKIN_RADIUS = 50; // meters
 
-export default function BusinessPanel({ business, userLocation, onCheckInComplete, onClose }: BusinessPanelProps) {
+export default function BusinessPanel({ business, userLocation, activeQuest, onCheckInComplete, onClose }: BusinessPanelProps) {
   const { updateUser, user } = useAuth();
   const [details, setDetails] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [checkingIn, setCheckingIn] = useState(false);
   const [undoing, setUndoing] = useState(false);
+  const [showQrModal, setShowQrModal] = useState(false);
   const [checkinResult, setCheckinResult] = useState<{
     points: PointsBreakdown;
     isFirstVisit: boolean;
@@ -32,8 +34,52 @@ export default function BusinessPanel({ business, userLocation, onCheckInComplet
     neighborhoodCapture?: {
       neighborhoodName: string;
     };
+    questCompletions?: {
+      questId: string;
+      questTitle?: string;
+      pointsEarned: number;
+      badgeEarned?: string | null;
+    }[];
+    questRedemption?: {
+      questId: string;
+      businessId: string;
+      title: string;
+      shortPrompt: string;
+      suggestedPercentOff?: number | null;
+      endsAt: string;
+    } | null;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const questSource = checkinResult?.questRedemption
+    ? {
+        questId: checkinResult.questRedemption.questId,
+        businessId: checkinResult.questRedemption.businessId,
+        title: checkinResult.questRedemption.title,
+        shortPrompt: checkinResult.questRedemption.shortPrompt,
+        suggestedPercentOff: checkinResult.questRedemption.suggestedPercentOff,
+        endsAt: checkinResult.questRedemption.endsAt,
+      }
+    : activeQuest
+      ? {
+          questId: activeQuest.quest_id,
+          businessId: activeQuest.business_id,
+          title: activeQuest.title,
+          shortPrompt: activeQuest.short_prompt,
+          suggestedPercentOff: activeQuest.suggested_percent_off,
+          endsAt: activeQuest.ends_at,
+        }
+      : null;
+  const questQrUrl = questSource
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
+        `quest:${questSource.questId}|business:${questSource.businessId}|title:${questSource.title}`
+      )}`
+    : null;
+  const questQrLargeUrl = questSource
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=360x360&data=${encodeURIComponent(
+        `quest:${questSource.questId}|business:${questSource.businessId}|title:${questSource.title}`
+      )}`
+    : null;
 
   const distance = userLocation
     ? calculateDistance(
@@ -58,6 +104,9 @@ export default function BusinessPanel({ business, userLocation, onCheckInComplet
   };
 
   useEffect(() => {
+    setError(null);
+    setCheckinResult(null);
+    setShowQrModal(false);
     fetchDetails();
   }, [business.id]);
 
@@ -78,7 +127,20 @@ export default function BusinessPanel({ business, userLocation, onCheckInComplet
       if (user) {
         updateUser({ points: user.points + result.points.total });
       }
+      if (result.questRedemption?.questId) {
+        try {
+          const raw = localStorage.getItem('claimed_generated_quests');
+          const parsed = raw ? JSON.parse(raw) : [];
+          const next = new Set<string>(Array.isArray(parsed) ? parsed : []);
+          next.add(result.questRedemption.questId);
+          localStorage.setItem('claimed_generated_quests', JSON.stringify(Array.from(next)));
+          window.dispatchEvent(new CustomEvent('wandr:quest-claim'));
+        } catch (storageErr) {
+          console.warn('Failed to persist claimed quest id', storageErr);
+        }
+      }
       await fetchDetails();
+      window.dispatchEvent(new CustomEvent('wandr:feed-refresh'));
       onCheckInComplete?.();
     } catch (err: any) {
       setError(err.response?.data?.error || 'Check-in failed');
@@ -183,6 +245,12 @@ export default function BusinessPanel({ business, userLocation, onCheckInComplet
                     <span className="ml-1 text-emerald-400">+{checkinResult.points.neighborhoodBonus}</span>
                   </div>
                 )}
+                {checkinResult.points.questBonus && checkinResult.points.questBonus > 0 && (
+                  <div>
+                    <span className="text-gray-400">Quest:</span>
+                    <span className="ml-1 text-purple-300">+{checkinResult.points.questBonus}</span>
+                  </div>
+                )}
                 <div className="col-span-2 pt-2 border-t border-white/10">
                   <span className="font-semibold text-primary-400">Total: +{checkinResult.points.total} points</span>
                 </div>
@@ -203,6 +271,37 @@ export default function BusinessPanel({ business, userLocation, onCheckInComplet
                   </div>
                 </div>
               )}
+              {checkinResult.questCompletions && checkinResult.questCompletions.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-white/10 space-y-1">
+                  {checkinResult.questCompletions.map((quest) => (
+                    <div key={quest.questId} className="flex items-center gap-2 text-sm">
+                      <span className="text-purple-300">🎯</span>
+                      <span className="text-purple-200">
+                        Quest Complete{quest.questTitle ? `: ${quest.questTitle}` : ''} (+{quest.pointsEarned})
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {questSource && questQrUrl && (
+            <div className="mb-4 p-3 bg-purple-500/10 rounded-xl border border-purple-500/30">
+              <div className="text-sm font-semibold text-purple-200 mb-1">Quest QR</div>
+              <div className="text-xs text-gray-400 mb-3">{questSource.shortPrompt}</div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowQrModal(true)}
+                  className="rounded-lg bg-white p-1 hover:scale-105 transition-transform"
+                >
+                  <img src={questQrUrl} alt="Quest QR" className="w-20 h-20 rounded-md" />
+                </button>
+                <div className="text-xs text-amber-200">
+                  Redeem coupon: {questSource.suggestedPercentOff ?? 0}%
+                </div>
+              </div>
             </div>
           )}
 
@@ -288,6 +387,28 @@ export default function BusinessPanel({ business, userLocation, onCheckInComplet
           )}
         </div>
       </div>
+
+      {showQrModal && questQrLargeUrl && questSource && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+          <div className="glass rounded-2xl p-4 w-80 relative">
+            <button
+              className="absolute top-2 right-2 text-gray-400 hover:text-white"
+              onClick={() => setShowQrModal(false)}
+            >
+              ✕
+            </button>
+            <h3 className="text-lg font-semibold mb-2">{questSource.title}</h3>
+            <p className="text-xs text-gray-400 mb-3">{questSource.shortPrompt}</p>
+            <div className="flex justify-center mb-3">
+              <img src={questQrLargeUrl} alt="Quest QR Large" className="w-56 h-56 rounded-lg bg-white p-2" />
+            </div>
+            <div className="text-xs text-amber-200 mb-2">
+              Redeem coupon: {questSource.suggestedPercentOff ?? 0}%
+            </div>
+            <Button className="w-full" onClick={() => setShowQrModal(false)}>Close</Button>
+          </div>
+        </div>
+      )}
 
       <style>{`
         @keyframes slide-up {

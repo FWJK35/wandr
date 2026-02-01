@@ -209,5 +209,6 @@ export interface PointsBreakdown {
   streakBonus: number;
   zoneCaptureBonus?: number;
   neighborhoodBonus?: number;
+  questBonus?: number;
   total: number;
 }
