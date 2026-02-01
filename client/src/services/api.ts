@@ -125,6 +125,21 @@ export const businessesApi = {
     );
     return res.data;
   },
+
+  create: async (data: { name: string; category: string; address: string; latitude: number; longitude: number; description?: string }) => {
+    const res = await api.post<{ id: string }>(`/businesses`, data);
+    return res.data;
+  },
+
+  update: async (id: string, data: { name?: string; category?: string; address?: string; description?: string }) => {
+    const res = await api.patch<{ id: string }>(`/businesses/${id}`, data);
+    return res.data;
+  },
+
+  delete: async (id: string) => {
+    const res = await api.delete<{ id: string }>(`/businesses/${id}`);
+    return res.data;
+  },
 };
 
 // Check-ins API
@@ -206,6 +221,36 @@ export const zonesApi = {
 
   updateNeighborhoodBoundary: async (id: string, coordinates: [number, number][]) => {
     const res = await api.patch<{ id: string }>(`/zones/neighborhoods/${id}/boundary`, { coordinates });
+    return res.data;
+  },
+
+  updateZoneMeta: async (id: string, data: { name?: string; description?: string; neighborhoodId?: string | null }) => {
+    const res = await api.patch<{ id: string }>(`/zones/${id}`, data);
+    return res.data;
+  },
+
+  updateNeighborhoodMeta: async (id: string, data: { name?: string; description?: string; bonusPoints?: number }) => {
+    const res = await api.patch<{ id: string }>(`/zones/neighborhoods/${id}`, data);
+    return res.data;
+  },
+
+  createZone: async (data: { name: string; description?: string; neighborhoodId?: string | null; coordinates: [number, number][] }) => {
+    const res = await api.post<{ id: string }>(`/zones`, data);
+    return res.data;
+  },
+
+  createNeighborhood: async (data: { name: string; description?: string; bonusPoints?: number; coordinates: [number, number][] }) => {
+    const res = await api.post<{ id: string }>(`/zones/neighborhoods`, data);
+    return res.data;
+  },
+
+  deleteZone: async (id: string) => {
+    const res = await api.delete<{ id: string }>(`/zones/${id}`);
+    return res.data;
+  },
+
+  deleteNeighborhood: async (id: string) => {
+    const res = await api.delete<{ id: string }>(`/zones/neighborhoods/${id}`);
     return res.data;
   },
 };

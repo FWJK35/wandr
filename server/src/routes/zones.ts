@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { v4 as uuidv4 } from 'uuid';
 import { query, queryOne, execute } from '../db/index.js';
 import { optionalAuth, authenticate, AuthRequest } from '../middleware/auth.js';
 
@@ -43,6 +44,186 @@ function normalizeBoundaryCoords(coords: any): [number, number][] | null {
   }
   return normalized;
 }
+
+// POST /api/zones/neighborhoods - Create neighborhood
+zonesRouter.post('/neighborhoods', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { name, description, coordinates, bonusPoints } = req.body;
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ error: 'name is required' });
+    }
+    const normalized = normalizeBoundaryCoords(coordinates);
+    if (!normalized) {
+      return res.status(400).json({ error: 'coordinates must be an array of [lng, lat] values' });
+    }
+
+    const id = uuidv4();
+    await execute(
+      `INSERT INTO neighborhoods (id, name, description, boundary_coords, bonus_points, created_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())`,
+      [
+        id,
+        name,
+        typeof description === 'string' ? description : null,
+        JSON.stringify(normalized),
+        typeof bonusPoints === 'number' ? bonusPoints : 50,
+      ]
+    );
+
+    res.status(201).json({ id });
+  } catch (error) {
+    console.error('Create neighborhood error:', error);
+    res.status(500).json({ error: 'Failed to create neighborhood' });
+  }
+});
+
+// POST /api/zones - Create zone
+zonesRouter.post('/', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { name, description, neighborhoodId, coordinates } = req.body;
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ error: 'name is required' });
+    }
+    const normalized = normalizeBoundaryCoords(coordinates);
+    if (!normalized) {
+      return res.status(400).json({ error: 'coordinates must be an array of [lng, lat] values' });
+    }
+
+    const id = uuidv4();
+    await execute(
+      `INSERT INTO zones (id, name, description, neighborhood_id, boundary_coords, created_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())`,
+      [
+        id,
+        name,
+        typeof description === 'string' ? description : null,
+        neighborhoodId || null,
+        JSON.stringify(normalized),
+      ]
+    );
+
+    res.status(201).json({ id });
+  } catch (error) {
+    console.error('Create zone error:', error);
+    res.status(500).json({ error: 'Failed to create zone' });
+  }
+});
+
+// PATCH /api/zones/neighborhoods/:id - Update neighborhood metadata
+zonesRouter.patch('/neighborhoods/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { name, description, bonusPoints } = req.body;
+    const updates: string[] = [];
+    const values: any[] = [];
+    let index = 1;
+
+    if (name !== undefined) {
+      updates.push(`name = $${index++}`);
+      values.push(name);
+    }
+    if (description !== undefined) {
+      updates.push(`description = $${index++}`);
+      values.push(description);
+    }
+    if (bonusPoints !== undefined) {
+      updates.push(`bonus_points = $${index++}`);
+      values.push(bonusPoints);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+
+    values.push(id);
+    const updated = await execute(
+      `UPDATE neighborhoods SET ${updates.join(', ')} WHERE id = $${index}`,
+      values
+    );
+
+    if (updated === 0) {
+      return res.status(404).json({ error: 'Neighborhood not found' });
+    }
+
+    res.json({ id });
+  } catch (error) {
+    console.error('Update neighborhood error:', error);
+    res.status(500).json({ error: 'Failed to update neighborhood' });
+  }
+});
+
+// PATCH /api/zones/:id - Update zone metadata
+zonesRouter.patch('/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { name, description, neighborhoodId } = req.body;
+    const updates: string[] = [];
+    const values: any[] = [];
+    let index = 1;
+
+    if (name !== undefined) {
+      updates.push(`name = $${index++}`);
+      values.push(name);
+    }
+    if (description !== undefined) {
+      updates.push(`description = $${index++}`);
+      values.push(description);
+    }
+    if ('neighborhoodId' in req.body) {
+      updates.push(`neighborhood_id = $${index++}`);
+      values.push(neighborhoodId || null);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+
+    values.push(id);
+    const updated = await execute(
+      `UPDATE zones SET ${updates.join(', ')} WHERE id = $${index}`,
+      values
+    );
+
+    if (updated === 0) {
+      return res.status(404).json({ error: 'Zone not found' });
+    }
+
+    res.json({ id });
+  } catch (error) {
+    console.error('Update zone error:', error);
+    res.status(500).json({ error: 'Failed to update zone' });
+  }
+});
+
+// DELETE /api/zones/neighborhoods/:id - Delete neighborhood
+zonesRouter.delete('/neighborhoods/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const deleted = await execute('DELETE FROM neighborhoods WHERE id = $1', [id]);
+    if (deleted === 0) {
+      return res.status(404).json({ error: 'Neighborhood not found' });
+    }
+    res.json({ id });
+  } catch (error) {
+    console.error('Delete neighborhood error:', error);
+    res.status(500).json({ error: 'Failed to delete neighborhood' });
+  }
+});
+
+// DELETE /api/zones/:id - Delete zone
+zonesRouter.delete('/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const deleted = await execute('DELETE FROM zones WHERE id = $1', [id]);
+    if (deleted === 0) {
+      return res.status(404).json({ error: 'Zone not found' });
+    }
+    res.json({ id });
+  } catch (error) {
+    console.error('Delete zone error:', error);
+    res.status(500).json({ error: 'Failed to delete zone' });
+  }
+});
 
 // PATCH /api/zones/neighborhoods/:id/boundary - Update neighborhood boundary
 zonesRouter.patch('/neighborhoods/:id/boundary', authenticate, async (req: AuthRequest, res: Response) => {

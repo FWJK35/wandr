@@ -60,6 +60,66 @@ const translatePolygon = (coords: [number, number][], deltaLng: number, deltaLat
   return closePolygon(next);
 };
 
+const distanceToSegment = (
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number
+) => {
+  const dx = bx - ax;
+  const dy = by - ay;
+  if (dx === 0 && dy === 0) {
+    const cx = px - ax;
+    const cy = py - ay;
+    return Math.hypot(cx, cy);
+  }
+  const t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy);
+  const clamped = Math.max(0, Math.min(1, t));
+  const projX = ax + clamped * dx;
+  const projY = ay + clamped * dy;
+  return Math.hypot(px - projX, py - projY);
+};
+
+const insertPoint = (coords: [number, number][], lng: number, lat: number) => {
+  const unique = uniqueCoords(coords);
+  if (unique.length < 2) {
+    return closePolygon([...unique, [lng, lat]]);
+  }
+  let bestIndex = unique.length;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < unique.length; i++) {
+    const a = unique[i];
+    const b = unique[(i + 1) % unique.length];
+    const dist = distanceToSegment(lng, lat, a[0], a[1], b[0], b[1]);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestIndex = i + 1;
+    }
+  }
+  const next = [
+    ...unique.slice(0, bestIndex),
+    [lng, lat],
+    ...unique.slice(bestIndex),
+  ] as [number, number][];
+  return closePolygon(next);
+};
+
+const removeVertex = (coords: [number, number][], index: number) => {
+  const unique = uniqueCoords(coords);
+  if (unique.length <= 3) return coords;
+  const next = unique.filter((_, i) => i !== index) as [number, number][];
+  return closePolygon(next);
+};
+
+const buildSquare = (lng: number, lat: number, size: number) => closePolygon([
+  [lng - size, lat - size],
+  [lng + size, lat - size],
+  [lng + size, lat + size],
+  [lng - size, lat + size],
+]);
+
 const getCentroid = (coords: [number, number][]) => {
   const unique = uniqueCoords(coords);
   if (unique.length === 0) {
@@ -73,6 +133,18 @@ const getCentroid = (coords: [number, number][]) => {
 };
 
 const formatCoord = (value: number) => value.toFixed(6);
+
+const businessCategories = [
+  'Cafe',
+  'Restaurant',
+  'Bar',
+  'Shop',
+  'Museum',
+  'Gym',
+  'Entertainment',
+  'Park',
+  'Other',
+];
 
 export default function GeometryEditor() {
   const mapRef = useRef<MapRef>(null);
@@ -99,6 +171,20 @@ export default function GeometryEditor() {
   const [dirtyZones, setDirtyZones] = useState<Set<string>>(new Set());
   const [dirtyNeighborhoods, setDirtyNeighborhoods] = useState<Set<string>>(new Set());
   const didLoadForLocation = useRef(false);
+  const [addPointMode, setAddPointMode] = useState(false);
+  const [removePointMode, setRemovePointMode] = useState(false);
+  const [createMode, setCreateMode] = useState<EditorMode | null>(null);
+  const [createName, setCreateName] = useState('');
+  const [createCategory, setCreateCategory] = useState('Shop');
+  const [createAddress, setCreateAddress] = useState('');
+  const [createNeighborhoodId, setCreateNeighborhoodId] = useState('');
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [pendingNeighborhoodId, setPendingNeighborhoodId] = useState<string>('');
+  const [editBusinessName, setEditBusinessName] = useState('');
+  const [editBusinessCategory, setEditBusinessCategory] = useState('Shop');
+  const [editBusinessAddress, setEditBusinessAddress] = useState('');
+  const [editZoneName, setEditZoneName] = useState('');
+  const [editNeighborhoodName, setEditNeighborhoodName] = useState('');
 
   useEffect(() => {
     if (location) {
@@ -224,6 +310,47 @@ export default function GeometryEditor() {
     ? neighborhoods.find(n => n.id === selectedId) || null
     : null;
 
+  useEffect(() => {
+    if (selectedZone) {
+      setPendingNeighborhoodId(selectedZone.neighborhoodId || '');
+    }
+  }, [selectedZone?.id]);
+
+  useEffect(() => {
+    setAddPointMode(false);
+    setRemovePointMode(false);
+  }, [mode, selectedId]);
+
+  useEffect(() => {
+    if (!createMode) {
+      setCreateName('');
+      setCreateCategory('Shop');
+      setCreateAddress('');
+      setCreateNeighborhoodId('');
+      setCreateError(null);
+    }
+  }, [createMode]);
+
+  useEffect(() => {
+    if (selectedBusiness) {
+      setEditBusinessName(selectedBusiness.name);
+      setEditBusinessCategory(selectedBusiness.category || 'Shop');
+      setEditBusinessAddress(selectedBusiness.address || '');
+    }
+  }, [selectedBusiness?.id]);
+
+  useEffect(() => {
+    if (selectedZone) {
+      setEditZoneName(selectedZone.name);
+    }
+  }, [selectedZone?.id]);
+
+  useEffect(() => {
+    if (selectedNeighborhood) {
+      setEditNeighborhoodName(selectedNeighborhood.name);
+    }
+  }, [selectedNeighborhood?.id]);
+
   const updateBusinessPosition = (id: string, latitude: number, longitude: number) => {
     setBusinesses(prev => prev.map(b => (b.id === id ? { ...b, latitude, longitude } : b)));
     setDirtyBusinesses(prev => {
@@ -281,6 +408,240 @@ export default function GeometryEditor() {
     if (hood) {
       const centroid = getCentroid(hood.coords);
       focusMap(centroid.lng, centroid.lat);
+    }
+  };
+
+  const getMapCenter = () => {
+    const map = mapRef.current?.getMap();
+    const center = map?.getCenter();
+    if (center) {
+      return { lng: center.lng, lat: center.lat };
+    }
+    const fallback = viewStateRef.current;
+    return { lng: fallback.longitude, lat: fallback.latitude };
+  };
+
+  const handleCreate = async () => {
+    if (!createMode) return;
+    const trimmed = createName.trim();
+    if (!trimmed) {
+      setCreateError('Name is required');
+      return;
+    }
+    setCreateError(null);
+    setSaving(true);
+    setStatus(null);
+    try {
+      const { lng, lat } = getMapCenter();
+      if (createMode === 'business') {
+        const result = await businessesApi.create({
+          name: trimmed,
+          category: createCategory || 'Other',
+          address: createAddress || '',
+          latitude: lat,
+          longitude: lng,
+        });
+        const newBusiness: Business = {
+          id: result.id,
+          name: trimmed,
+          category: createCategory || 'Other',
+          address: createAddress || '',
+          latitude: lat,
+          longitude: lng,
+          isBoosted: false,
+          visited: false,
+        };
+        setBusinesses(prev => [newBusiness, ...prev]);
+        setMode('business');
+        setSelectedId(result.id);
+      } else {
+        const size = createMode === 'zone' ? 0.0015 : 0.003;
+        const coords = buildSquare(lng, lat, size);
+
+        if (createMode === 'zone') {
+        const result = await zonesApi.createZone({
+          name: trimmed,
+          neighborhoodId: createNeighborhoodId || null,
+          coordinates: coords,
+        });
+        const neighborhoodName = neighborhoods.find(n => n.id === createNeighborhoodId)?.name;
+        const newZone: EditableZone = {
+          id: result.id,
+          name: trimmed,
+          neighborhoodId: createNeighborhoodId || undefined,
+          neighborhoodName,
+          coords,
+          captured: false,
+        };
+        setZones(prev => [newZone, ...prev]);
+        setMode('zone');
+        setSelectedId(result.id);
+        } else {
+        const result = await zonesApi.createNeighborhood({
+          name: trimmed,
+          coordinates: coords,
+        });
+        const newNeighborhood: EditableNeighborhood = {
+          id: result.id,
+          name: trimmed,
+          coords,
+          fullyCaptured: false,
+          percentCaptured: 0,
+        };
+        setNeighborhoods(prev => [newNeighborhood, ...prev]);
+        setMode('neighborhood');
+        setSelectedId(result.id);
+        }
+      }
+
+      setCreateMode(null);
+      setStatus({ type: 'success', message: 'Created successfully' });
+    } catch (err) {
+      console.error('Failed to create geometry:', err);
+      setStatus({ type: 'error', message: 'Failed to create' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAssignNeighborhood = async () => {
+    if (!selectedZone) return;
+    setSaving(true);
+    setStatus(null);
+    try {
+      await zonesApi.updateZoneMeta(selectedZone.id, {
+        neighborhoodId: pendingNeighborhoodId || null,
+      });
+      const neighborhoodName = neighborhoods.find(n => n.id === pendingNeighborhoodId)?.name;
+      setZones(prev => prev.map(z => (
+        z.id === selectedZone.id
+          ? { ...z, neighborhoodId: pendingNeighborhoodId || undefined, neighborhoodName }
+          : z
+      )));
+      setStatus({ type: 'success', message: 'Updated neighborhood' });
+    } catch (err) {
+      console.error('Failed to update zone neighborhood:', err);
+      setStatus({ type: 'error', message: 'Failed to update neighborhood' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdateBusiness = async () => {
+    if (!selectedBusiness) return;
+    const name = editBusinessName.trim();
+    if (!name) {
+      setStatus({ type: 'error', message: 'Business name is required' });
+      return;
+    }
+    setSaving(true);
+    setStatus(null);
+    try {
+      await businessesApi.update(selectedBusiness.id, {
+        name,
+        category: editBusinessCategory || 'Other',
+        address: editBusinessAddress || '',
+      });
+      setBusinesses(prev => prev.map(b => (
+        b.id === selectedBusiness.id
+          ? { ...b, name, category: editBusinessCategory || 'Other', address: editBusinessAddress || '' }
+          : b
+      )));
+      setStatus({ type: 'success', message: 'Business updated' });
+    } catch (err) {
+      console.error('Failed to update business:', err);
+      setStatus({ type: 'error', message: 'Failed to update business' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdateZoneName = async () => {
+    if (!selectedZone) return;
+    const name = editZoneName.trim();
+    if (!name) {
+      setStatus({ type: 'error', message: 'Zone name is required' });
+      return;
+    }
+    setSaving(true);
+    setStatus(null);
+    try {
+      await zonesApi.updateZoneMeta(selectedZone.id, { name });
+      setZones(prev => prev.map(z => (z.id === selectedZone.id ? { ...z, name } : z)));
+      setStatus({ type: 'success', message: 'Zone renamed' });
+    } catch (err) {
+      console.error('Failed to rename zone:', err);
+      setStatus({ type: 'error', message: 'Failed to rename zone' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdateNeighborhoodName = async () => {
+    if (!selectedNeighborhood) return;
+    const name = editNeighborhoodName.trim();
+    if (!name) {
+      setStatus({ type: 'error', message: 'Neighborhood name is required' });
+      return;
+    }
+    setSaving(true);
+    setStatus(null);
+    try {
+      await zonesApi.updateNeighborhoodMeta(selectedNeighborhood.id, { name });
+      setNeighborhoods(prev => prev.map(n => (n.id === selectedNeighborhood.id ? { ...n, name } : n)));
+      setZones(prev => prev.map(z => (
+        z.neighborhoodId === selectedNeighborhood.id ? { ...z, neighborhoodName: name } : z
+      )));
+      setStatus({ type: 'success', message: 'Neighborhood renamed' });
+    } catch (err) {
+      console.error('Failed to rename neighborhood:', err);
+      setStatus({ type: 'error', message: 'Failed to rename neighborhood' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (!selectedId) return;
+    if (!window.confirm('Delete this item? This cannot be undone.')) return;
+    setSaving(true);
+    setStatus(null);
+    try {
+      if (mode === 'business') {
+        await businessesApi.delete(selectedId);
+        setBusinesses(prev => prev.filter(b => b.id !== selectedId));
+        setDirtyBusinesses(prev => {
+          const next = new Set(prev);
+          next.delete(selectedId);
+          return next;
+        });
+      } else if (mode === 'zone') {
+        await zonesApi.deleteZone(selectedId);
+        setZones(prev => prev.filter(z => z.id !== selectedId));
+        setDirtyZones(prev => {
+          const next = new Set(prev);
+          next.delete(selectedId);
+          return next;
+        });
+      } else if (mode === 'neighborhood') {
+        await zonesApi.deleteNeighborhood(selectedId);
+        setNeighborhoods(prev => prev.filter(n => n.id !== selectedId));
+        setZones(prev => prev.map(z => (
+          z.neighborhoodId === selectedId ? { ...z, neighborhoodId: undefined, neighborhoodName: undefined } : z
+        )));
+        setDirtyNeighborhoods(prev => {
+          const next = new Set(prev);
+          next.delete(selectedId);
+          return next;
+        });
+      }
+      setSelectedId(null);
+      setStatus({ type: 'success', message: 'Deleted successfully' });
+    } catch (err) {
+      console.error('Failed to delete geometry:', err);
+      setStatus({ type: 'error', message: 'Failed to delete' });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -366,6 +727,17 @@ export default function GeometryEditor() {
     : selectedNeighborhood ? { id: selectedNeighborhood.id, coords: selectedNeighborhood.coords, type: 'neighborhood' as const }
     : null;
 
+  const handleMapClick = useCallback((evt: any) => {
+    if (!addPointMode || !selectedPolygon) return;
+    const { lngLat } = evt;
+    const nextCoords = insertPoint(selectedPolygon.coords, lngLat.lng, lngLat.lat);
+    if (selectedPolygon.type === 'zone') {
+      updateZoneCoords(selectedPolygon.id, nextCoords);
+    } else {
+      updateNeighborhoodCoords(selectedPolygon.id, nextCoords);
+    }
+  }, [addPointMode, selectedPolygon, updateZoneCoords, updateNeighborhoodCoords]);
+
   if (!MAPBOX_TOKEN) {
     return (
       <div className="h-full flex items-center justify-center bg-dark-300">
@@ -383,6 +755,7 @@ export default function GeometryEditor() {
         ref={mapRef}
         {...viewState}
         onMove={(evt) => setViewState(evt.viewState)}
+        onClick={handleMapClick}
         mapboxAccessToken={MAPBOX_TOKEN}
         mapStyle="mapbox://styles/mapbox/dark-v11"
         style={{ width: '100%', height: '100%' }}
@@ -482,14 +855,29 @@ export default function GeometryEditor() {
                 longitude={point[0]}
                 latitude={point[1]}
                 anchor="center"
-                draggable
+                draggable={!removePointMode}
                 onDragEnd={(e) => {
+                  if (removePointMode) return;
                   const nextCoords = updateVertex(
                     selectedPolygon.coords,
                     index,
                     e.lngLat.lng,
                     e.lngLat.lat
                   );
+                  if (selectedPolygon.type === 'zone') {
+                    updateZoneCoords(selectedPolygon.id, nextCoords);
+                  } else {
+                    updateNeighborhoodCoords(selectedPolygon.id, nextCoords);
+                  }
+                }}
+                onClick={(e) => {
+                  e.originalEvent.stopPropagation();
+                  if (!removePointMode) return;
+                  const nextCoords = removeVertex(selectedPolygon.coords, index);
+                  if (nextCoords.length === selectedPolygon.coords.length) {
+                    setStatus({ type: 'error', message: 'Polygon needs at least 3 points' });
+                    return;
+                  }
                   if (selectedPolygon.type === 'zone') {
                     updateZoneCoords(selectedPolygon.id, nextCoords);
                   } else {
@@ -528,7 +916,7 @@ export default function GeometryEditor() {
         )}
       </Map>
 
-      <div className="absolute top-4 left-4 w-80 glass rounded-2xl p-4 space-y-4">
+      <div className="absolute top-4 left-4 w-80 glass rounded-2xl p-4 space-y-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="font-semibold text-white text-lg">Geometry Editor</h2>
@@ -562,6 +950,106 @@ export default function GeometryEditor() {
           placeholder="Filter by name..."
           className="w-full rounded-lg bg-black/30 border border-white/10 px-3 py-2 text-sm text-white"
         />
+
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setCreateMode('zone')}
+              className="flex-1 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-gray-200 text-sm"
+            >
+              New Zone
+            </button>
+            <button
+              onClick={() => setCreateMode('neighborhood')}
+              className="flex-1 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-gray-200 text-sm"
+            >
+              New Neighborhood
+            </button>
+          </div>
+          <button
+            onClick={() => setCreateMode('business')}
+            className="w-full px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-gray-200 text-sm"
+          >
+            New Business
+          </button>
+
+          {createMode && (
+            <div className="rounded-lg border border-white/10 bg-black/30 p-3 space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-gray-300">
+                  Create {createMode === 'zone' ? 'zone' : 'neighborhood'}
+                </span>
+                <button
+                  onClick={() => setCreateMode(null)}
+                  className="text-gray-400 hover:text-gray-200"
+                >
+                  Close
+                </button>
+              </div>
+              <input
+                value={createName}
+                onChange={(e) => setCreateName(e.target.value)}
+                placeholder="Name"
+                className="w-full rounded-lg bg-black/30 border border-white/10 px-3 py-2 text-sm text-white"
+              />
+              {createMode === 'business' && (
+                <>
+                  <div>
+                    <label className="block text-gray-400 mb-1">Category</label>
+                    <select
+                      value={createCategory}
+                      onChange={(e) => setCreateCategory(e.target.value)}
+                      className="w-full rounded-lg bg-black/30 border border-white/10 px-2 py-2 text-sm text-white"
+                    >
+                      {businessCategories.map((cat) => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-gray-400 mb-1">Address</label>
+                    <input
+                      value={createAddress}
+                      onChange={(e) => setCreateAddress(e.target.value)}
+                      placeholder="Address"
+                      className="w-full rounded-lg bg-black/30 border border-white/10 px-3 py-2 text-sm text-white"
+                    />
+                  </div>
+                </>
+              )}
+              {createMode === 'zone' && (
+                <div>
+                  <label className="block text-gray-400 mb-1">Neighborhood</label>
+                  <select
+                    value={createNeighborhoodId}
+                    onChange={(e) => setCreateNeighborhoodId(e.target.value)}
+                    className="w-full rounded-lg bg-black/30 border border-white/10 px-2 py-2 text-sm text-white"
+                  >
+                    <option value="">Unassigned</option>
+                    {neighborhoods.map((n) => (
+                      <option key={n.id} value={n.id}>{n.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {createError && (
+                <div className="text-red-400">{createError}</div>
+              )}
+              <button
+                onClick={handleCreate}
+                disabled={saving}
+                className="w-full px-3 py-2 rounded-lg bg-emerald-500/80 hover:bg-emerald-500 text-white text-sm disabled:opacity-50"
+              >
+                Create at Map Center
+              </button>
+              <div className="text-[11px] text-gray-500">
+                {createMode === 'business'
+                  ? 'Creates the business at the current map center.'
+                  : 'Creates a default square around the current map center.'}
+              </div>
+            </div>
+          )}
+        </div>
 
         <div className="max-h-48 overflow-auto space-y-1 pr-1">
           {mode === 'business' &&
@@ -639,6 +1127,170 @@ export default function GeometryEditor() {
               ))
             ))}
         </div>
+
+        {(mode === 'zone' || mode === 'neighborhood') && selectedId && (
+          <div className="space-y-2 rounded-lg border border-white/10 bg-black/20 p-3 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-gray-300">Edit Geometry</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setAddPointMode((prev) => !prev);
+                    setRemovePointMode(false);
+                  }}
+                  className={`px-2 py-1 rounded-full text-[11px] ${
+                    addPointMode ? 'bg-amber-500 text-white' : 'bg-white/10 text-gray-200'
+                  }`}
+                >
+                  {addPointMode ? 'Click map to add' : 'Add Point'}
+                </button>
+                <button
+                  onClick={() => {
+                    setRemovePointMode((prev) => !prev);
+                    setAddPointMode(false);
+                  }}
+                  className={`px-2 py-1 rounded-full text-[11px] ${
+                    removePointMode ? 'bg-red-500 text-white' : 'bg-white/10 text-gray-200'
+                  }`}
+                >
+                  {removePointMode ? 'Click vertex to remove' : 'Remove Point'}
+                </button>
+              </div>
+            </div>
+            {addPointMode && (
+              <div className="text-[11px] text-amber-300">
+                Click on the map to insert a new vertex along the closest edge.
+              </div>
+            )}
+            {removePointMode && (
+              <div className="text-[11px] text-red-300">
+                Click a vertex to remove it (minimum 3 points).
+              </div>
+            )}
+          </div>
+        )}
+
+        {mode === 'business' && selectedBusiness && (
+          <div className="space-y-2 rounded-lg border border-white/10 bg-black/20 p-3 text-xs">
+            <div className="text-gray-300">Business Details</div>
+            <input
+              value={editBusinessName}
+              onChange={(e) => setEditBusinessName(e.target.value)}
+              className="w-full rounded-lg bg-black/30 border border-white/10 px-3 py-2 text-sm text-white"
+              placeholder="Name"
+            />
+            <select
+              value={editBusinessCategory}
+              onChange={(e) => setEditBusinessCategory(e.target.value)}
+              className="w-full rounded-lg bg-black/30 border border-white/10 px-2 py-2 text-sm text-white"
+            >
+              {businessCategories.map((cat) => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+            <input
+              value={editBusinessAddress}
+              onChange={(e) => setEditBusinessAddress(e.target.value)}
+              className="w-full rounded-lg bg-black/30 border border-white/10 px-3 py-2 text-sm text-white"
+              placeholder="Address"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={handleUpdateBusiness}
+                disabled={saving}
+                className="flex-1 px-3 py-2 rounded-lg bg-emerald-500/80 hover:bg-emerald-500 text-white text-sm disabled:opacity-50"
+              >
+                Save Details
+              </button>
+              <button
+                onClick={handleDeleteSelected}
+                disabled={saving}
+                className="px-3 py-2 rounded-lg bg-red-500/80 hover:bg-red-500 text-white text-sm disabled:opacity-50"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        )}
+
+        {mode === 'zone' && selectedZone && (
+          <div className="space-y-2 rounded-lg border border-white/10 bg-black/20 p-3 text-xs">
+            <div className="text-gray-300">Zone Details</div>
+            <input
+              value={editZoneName}
+              onChange={(e) => setEditZoneName(e.target.value)}
+              className="w-full rounded-lg bg-black/30 border border-white/10 px-3 py-2 text-sm text-white"
+              placeholder="Zone name"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={handleUpdateZoneName}
+                disabled={saving}
+                className="flex-1 px-3 py-2 rounded-lg bg-emerald-500/80 hover:bg-emerald-500 text-white text-sm disabled:opacity-50"
+              >
+                Rename Zone
+              </button>
+              <button
+                onClick={handleDeleteSelected}
+                disabled={saving}
+                className="px-3 py-2 rounded-lg bg-red-500/80 hover:bg-red-500 text-white text-sm disabled:opacity-50"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        )}
+
+        {mode === 'neighborhood' && selectedNeighborhood && (
+          <div className="space-y-2 rounded-lg border border-white/10 bg-black/20 p-3 text-xs">
+            <div className="text-gray-300">Neighborhood Details</div>
+            <input
+              value={editNeighborhoodName}
+              onChange={(e) => setEditNeighborhoodName(e.target.value)}
+              className="w-full rounded-lg bg-black/30 border border-white/10 px-3 py-2 text-sm text-white"
+              placeholder="Neighborhood name"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={handleUpdateNeighborhoodName}
+                disabled={saving}
+                className="flex-1 px-3 py-2 rounded-lg bg-emerald-500/80 hover:bg-emerald-500 text-white text-sm disabled:opacity-50"
+              >
+                Rename Neighborhood
+              </button>
+              <button
+                onClick={handleDeleteSelected}
+                disabled={saving}
+                className="px-3 py-2 rounded-lg bg-red-500/80 hover:bg-red-500 text-white text-sm disabled:opacity-50"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        )}
+
+        {mode === 'zone' && selectedZone && (
+          <div className="space-y-2 rounded-lg border border-white/10 bg-black/20 p-3 text-xs">
+            <div className="text-gray-300">Neighborhood Assignment</div>
+            <select
+              value={pendingNeighborhoodId}
+              onChange={(e) => setPendingNeighborhoodId(e.target.value)}
+              className="w-full rounded-lg bg-black/30 border border-white/10 px-2 py-2 text-sm text-white"
+            >
+              <option value="">Unassigned</option>
+              {neighborhoods.map((n) => (
+                <option key={n.id} value={n.id}>{n.name}</option>
+              ))}
+            </select>
+            <button
+              onClick={handleAssignNeighborhood}
+              disabled={saving}
+              className="w-full px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-gray-200 text-sm disabled:opacity-50"
+            >
+              Update Neighborhood
+            </button>
+          </div>
+        )}
 
         <div className="space-y-2">
           <div className="flex gap-2">

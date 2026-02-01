@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { v4 as uuidv4 } from 'uuid';
 import { query, queryOne, execute } from '../db/index.js';
 import { optionalAuth, authenticate, AuthRequest } from '../middleware/auth.js';
 
@@ -104,6 +105,29 @@ businessesRouter.get('/', optionalAuth, async (req: AuthRequest, res: Response) 
   }
 });
 
+// POST /api/businesses - Create a business
+businessesRouter.post('/', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { name, category, address, latitude, longitude, description } = req.body;
+
+    if (!name || !category || !address || typeof latitude !== 'number' || typeof longitude !== 'number') {
+      return res.status(400).json({ error: 'name, category, address, latitude, and longitude are required' });
+    }
+
+    const id = uuidv4();
+    await execute(
+      `INSERT INTO businesses (id, name, description, category, address, latitude, longitude, is_verified, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, false, NOW(), NOW())`,
+      [id, name, typeof description === 'string' ? description : null, category, address, latitude, longitude]
+    );
+
+    res.status(201).json({ id });
+  } catch (error) {
+    console.error('Create business error:', error);
+    res.status(500).json({ error: 'Failed to create business' });
+  }
+});
+
 // PATCH /api/businesses/:id/position - Update business location
 businessesRouter.patch('/:id/position', authenticate, async (req: AuthRequest, res: Response) => {
   try {
@@ -129,6 +153,68 @@ businessesRouter.patch('/:id/position', authenticate, async (req: AuthRequest, r
   } catch (error) {
     console.error('Update business position error:', error);
     res.status(500).json({ error: 'Failed to update business position' });
+  }
+});
+
+// PATCH /api/businesses/:id - Update business details
+businessesRouter.patch('/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { name, category, address, description } = req.body;
+    const updates: string[] = [];
+    const values: any[] = [];
+    let index = 1;
+
+    if (name !== undefined) {
+      updates.push(`name = $${index++}`);
+      values.push(name);
+    }
+    if (category !== undefined) {
+      updates.push(`category = $${index++}`);
+      values.push(category);
+    }
+    if (address !== undefined) {
+      updates.push(`address = $${index++}`);
+      values.push(address);
+    }
+    if (description !== undefined) {
+      updates.push(`description = $${index++}`);
+      values.push(description);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+
+    values.push(id);
+    const updated = await execute(
+      `UPDATE businesses SET ${updates.join(', ')}, updated_at = NOW() WHERE id = $${index}`,
+      values
+    );
+
+    if (updated === 0) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
+
+    res.json({ id });
+  } catch (error) {
+    console.error('Update business error:', error);
+    res.status(500).json({ error: 'Failed to update business' });
+  }
+});
+
+// DELETE /api/businesses/:id - Delete business
+businessesRouter.delete('/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const deleted = await execute('DELETE FROM businesses WHERE id = $1', [id]);
+    if (deleted === 0) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
+    res.json({ id });
+  } catch (error) {
+    console.error('Delete business error:', error);
+    res.status(500).json({ error: 'Failed to delete business' });
   }
 });
 
