@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
+import { loadEnv } from './env.js';
 import { authRouter } from './routes/auth.js';
 import { usersRouter } from './routes/users.js';
 import { businessesRouter } from './routes/businesses.js';
@@ -13,10 +15,11 @@ import { businessDashboardRouter } from './routes/business-dashboard.js';
 import { paymentsRouter } from './routes/payments.js';
 import { landmarksRouter } from './routes/landmarks.js';
 
-dotenv.config();
+loadEnv();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const clientDistPath = path.resolve(process.cwd(), 'client', 'dist');
 
 // Middleware
 app.use(cors({
@@ -24,6 +27,10 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
+
+if (fs.existsSync(clientDistPath)) {
+  app.use(express.static(clientDistPath));
+}
 
 // Health check
 app.get('/health', (req, res) => {
@@ -42,6 +49,15 @@ app.use('/api/rewards', rewardsRouter);
 app.use('/api/business-dashboard', businessDashboardRouter);
 app.use('/api/payments', paymentsRouter);
 app.use('/api/landmarks', landmarksRouter);
+
+if (fs.existsSync(clientDistPath)) {
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) {
+      return next();
+    }
+    res.sendFile(path.join(clientDistPath, 'index.html'));
+  });
+}
 
 // Error handling middleware
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {

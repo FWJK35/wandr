@@ -1,8 +1,8 @@
-import dotenv from 'dotenv';
 import { v4 as uuidv4 } from 'uuid';
 import { pool } from './index.js';
+import { loadEnv } from '../env.js';
 
-dotenv.config();
+loadEnv();
 
 /**
  * Imports neighborhood boundaries from a GeoJSON FeatureCollection.

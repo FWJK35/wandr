@@ -1,7 +1,7 @@
 import { pool } from './index.js';
-import dotenv from 'dotenv';
+import { loadEnv } from '../env.js';
 
-dotenv.config();
+loadEnv();
 
 const migrations = [
   // Users table

@@ -1,9 +1,9 @@
 import { pool } from './index.js';
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
-import dotenv from 'dotenv';
+import { loadEnv } from '../env.js';
 
-dotenv.config();
+loadEnv();
 
 // Sample data for Providence, RI area (Brown University)
 const sampleBusinesses = [
