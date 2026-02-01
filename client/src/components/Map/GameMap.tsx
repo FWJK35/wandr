@@ -13,7 +13,7 @@ import LandmarkMarker from './LandmarkMarker';
 import LandmarkPanel from './LandmarkPanel';
 import LoadingSpinner from '../shared/LoadingSpinner';
 
-const MAPBOX_TOKEN = (import.meta as any).env?.VITE_MAPBOX_TOKEN || '';
+const MAPBOX_TOKEN = (import.meta as any).env?.VITE_MAPBOX_TOKEN || 'pk.eyJ1IjoiYWFseWFhbiIsImEiOiJjbTd0aXc3aHEwb2xlMm1wbHljM3NyZXVqIn0.7Jusn5gnPt9b0_XPnr_TkA';
 const NEIGHBORHOODS_GEOJSON_URL = '/neighborhoods-providence.geojson';
 
 const defaultCenter = {
