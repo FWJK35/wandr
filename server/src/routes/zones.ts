@@ -162,7 +162,7 @@ zonesRouter.patch('/:id', authenticate, async (req: AuthRequest, res: Response) 
       return res.status(404).json({ error: 'Zone not found' });
     }
 
-    res.json({ id, neighborhoodName });
+    res.json({ id });
   } catch (error) {
     console.error('Update zone error:', error);
     res.status(500).json({ error: 'Failed to update zone' });

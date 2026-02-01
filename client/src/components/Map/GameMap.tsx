@@ -20,7 +20,14 @@ const defaultCenter = {
   lng: -71.4025,
 };
 
-type MapMode = 'explore' | 'territory';
+const NEIGHBORHOOD_ALIASES: Record<string, string> = {
+  // Mapbox neighborhood names -> GeoJSON LNAMEs
+  'downtown providence': 'downtown',
+  'downtown providence ri': 'downtown',
+  'downtown providence rhode island': 'downtown',
+  'downtown providence providence rhode island': 'downtown',
+  'mt hope': 'mount hope',
+};
 
 const normalizeNeighborhoodName = (value: string) => (
   value
@@ -29,6 +36,11 @@ const normalizeNeighborhoodName = (value: string) => (
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
 );
+
+const canonicalizeNeighborhoodName = (value: string) => {
+  const normalized = normalizeNeighborhoodName(value);
+  return NEIGHBORHOOD_ALIASES[normalized] || normalized;
+};
 
 export default function GameMap() {
   const mapRef = useRef<MapRef>(null);
@@ -45,7 +57,6 @@ export default function GameMap() {
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
   const [loading, setLoading] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
-  const [mapMode, setMapMode] = useState<MapMode>('explore');
   const lastFetchRef = useRef<{ lat: number; lng: number } | null>(null);
   const [neighborhoodGeojson, setNeighborhoodGeojson] = useState<{ type: 'FeatureCollection'; features: any[] } | null>(null);
   const [neighborhoodsLoading, setNeighborhoodsLoading] = useState(false);
@@ -121,7 +132,7 @@ export default function GameMap() {
     const zoneGroups = new Map<string, { total: number; captured: number }>();
     zones.forEach((zone) => {
       if (!zone.neighborhoodName) return;
-      const key = normalizeNeighborhoodName(zone.neighborhoodName);
+      const key = canonicalizeNeighborhoodName(zone.neighborhoodName);
       if (!key) return;
       const entry = zoneGroups.get(key) || { total: 0, captured: 0 };
       entry.total += 1;
@@ -137,7 +148,7 @@ export default function GameMap() {
       .map((feature: any) => {
         const rawName = feature?.properties?.LNAME || feature?.properties?.name;
         if (!rawName) return null;
-        const key = normalizeNeighborhoodName(String(rawName));
+        const key = canonicalizeNeighborhoodName(String(rawName));
         const group = key ? zoneGroups.get(key) : null;
         if (!group || group.total === 0) return null;
         const captured = group.captured >= group.total;
@@ -193,13 +204,19 @@ export default function GameMap() {
     setLoading(true);
 
     try {
+      const bounds = mapRef.current?.getMap()?.getBounds();
+      const minLat = bounds?.getSouth() ?? lat - 0.02;
+      const maxLat = bounds?.getNorth() ?? lat + 0.02;
+      const minLng = bounds?.getWest() ?? lng - 0.02;
+      const maxLng = bounds?.getEast() ?? lng + 0.02;
+      const padding = 0.005;
       const [businessData, zoneData] = await Promise.all([
         businessesApi.getNearby(lat, lng, 2000),
         zonesApi.getInViewport({
-          minLat: lat - 0.02,
-          maxLat: lat + 0.02,
-          minLng: lng - 0.02,
-          maxLng: lng + 0.02,
+          minLat: minLat - padding,
+          maxLat: maxLat + padding,
+          minLng: minLng - padding,
+          maxLng: maxLng + padding,
         }),
       ]);
 
@@ -219,9 +236,15 @@ export default function GameMap() {
   }, [location, fetchData]);
 
   useEffect(() => {
-    if (!mapLoaded || mapMode !== 'territory') return;
+    if (mapLoaded && location) {
+      fetchData(location.latitude, location.longitude, true);
+    }
+  }, [mapLoaded, location, fetchData]);
+
+  useEffect(() => {
+    if (!mapLoaded) return;
     loadNeighborhoodBoundaries();
-  }, [mapLoaded, mapMode, loadNeighborhoodBoundaries]);
+  }, [mapLoaded, loadNeighborhoodBoundaries]);
 
   const handleMapLoad = useCallback(() => {
     setMapLoaded(true);
@@ -272,11 +295,6 @@ export default function GameMap() {
 
   const handleMarkerClick = (business: Business) => {
     setSelectedBusiness(business);
-  };
-
-  const toggleMode = () => {
-    setMapMode(prev => prev === 'explore' ? 'territory' : 'explore');
-    setSelectedBusiness(null);
   };
 
   const applySpoof = useCallback((lat: number, lng: number) => {
@@ -366,8 +384,8 @@ export default function GameMap() {
           showUserHeading
         />
 
-        {/* Territory mode: Show zones */}
-        {mapLoaded && mapMode === 'territory' && (
+        {/* Zones + neighborhoods */}
+        {mapLoaded && (
           <>
             {zones.map((zone) => (
               <ZoneOverlay key={zone.id} zone={zone} />
@@ -381,8 +399,8 @@ export default function GameMap() {
           </>
         )}
 
-        {/* Explore mode: Show business markers */}
-        {mapMode === 'explore' && businesses.map((business) => (
+        {/* Business markers */}
+        {businesses.map((business) => (
           <BusinessMarker
             key={business.id}
             business={business}
@@ -401,28 +419,6 @@ export default function GameMap() {
 
             {/* Mode toggle + testing tools */}
       <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
-        <button
-          onClick={toggleMode}
-          className={`
-            px-4 py-2 rounded-xl font-medium text-sm transition-all
-            ${mapMode === 'explore'
-              ? 'bg-primary-500 text-white'
-              : 'bg-emerald-500 text-white'
-            }
-            shadow-lg hover:scale-105
-          `}
-        >
-          {mapMode === 'explore' ? (
-            <span className="flex items-center gap-2">
-              <span>🧭</span> Explore Mode
-            </span>
-          ) : (
-            <span className="flex items-center gap-2">
-              <span>🗺️</span> Territory Mode
-            </span>
-          )}
-        </button>
-
         <button
           onClick={() => setSpoofOpen(prev => !prev)}
           className={`px-4 py-2 rounded-xl font-medium text-sm transition-all shadow-lg hover:scale-105 ${
@@ -494,41 +490,34 @@ export default function GameMap() {
       <div className="absolute top-4 left-44 right-16 flex justify-between items-start pointer-events-none">
         <div className="glass rounded-xl px-4 py-2 pointer-events-auto">
           <div className="flex items-center gap-4 text-sm">
-            {mapMode === 'explore' ? (
-              <>
-                <div>
-                  <span className="text-gray-400">Nearby:</span>
-                  <span className="ml-1 text-white font-semibold">{businesses.length}</span>
-                </div>
-              </>
-            ) : (
-              <>
-                <div>
-                  <span className="text-gray-400">Zones:</span>
-                  <span className="ml-1 text-white font-semibold">
-                    {zones.filter(z => z.captured).length}/{zones.length}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-gray-400">Neighborhoods:</span>
-                  <span className="ml-1 text-white font-semibold">
-                    {(() => {
-                      const groups = new Map<string, { total: number; captured: number }>();
-                      zones.forEach(zone => {
-                        const name = zone.neighborhoodName || 'Unassigned';
-                        const entry = groups.get(name) || { total: 0, captured: 0 };
-                        entry.total += 1;
-                        if (zone.captured) entry.captured += 1;
-                        groups.set(name, entry);
-                      });
-                      const totals = Array.from(groups.values());
-                      const fullyCaptured = totals.filter(g => g.total > 0 && g.captured >= g.total).length;
-                      return `${fullyCaptured}/${totals.length}`;
-                    })()}
-                  </span>
-                </div>
-              </>
-            )}
+            <div>
+              <span className="text-gray-400">Nearby:</span>
+              <span className="ml-1 text-white font-semibold">{businesses.length}</span>
+            </div>
+            <div>
+              <span className="text-gray-400">Zones:</span>
+              <span className="ml-1 text-white font-semibold">
+                {zones.filter(z => z.captured).length}/{zones.length}
+              </span>
+            </div>
+            <div>
+              <span className="text-gray-400">Neighborhoods:</span>
+              <span className="ml-1 text-white font-semibold">
+                {(() => {
+                  const groups = new Map<string, { total: number; captured: number }>();
+                  zones.forEach(zone => {
+                    const name = zone.neighborhoodName || 'Unassigned';
+                    const entry = groups.get(name) || { total: 0, captured: 0 };
+                    entry.total += 1;
+                    if (zone.captured) entry.captured += 1;
+                    groups.set(name, entry);
+                  });
+                  const totals = Array.from(groups.values());
+                  const fullyCaptured = totals.filter(g => g.total > 0 && g.captured >= g.total).length;
+                  return `${fullyCaptured}/${totals.length}`;
+                })()}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -558,8 +547,8 @@ export default function GameMap() {
         </div>
       )}
 
-      {/* Business detail panel (explore mode) */}
-      {mapMode === 'explore' && selectedBusiness && (
+      {/* Business detail panel */}
+      {selectedBusiness && (
         <BusinessPanel
           business={selectedBusiness}
           userLocation={location}
@@ -572,25 +561,23 @@ export default function GameMap() {
         />
       )}
 
-      {/* Territory panel (territory mode) */}
-      {mapMode === 'territory' && (
-        <>
-          <TerritoryPanel zones={zones} />
-          {neighborhoodsError && (
-            <div className="absolute top-24 left-4 right-4">
-              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 text-sm text-amber-200">
-                {neighborhoodsError}
-              </div>
-            </div>
-          )}
-          {neighborhoodsLoading && (
-            <div className="absolute top-24 right-4">
-              <div className="glass rounded-xl px-3 py-2 text-xs text-gray-300">
-                Loading neighborhood boundaries...
-              </div>
-            </div>
-          )}
-        </>
+      {/* Territory panel (when no business selected) */}
+      {!selectedBusiness && (
+        <TerritoryPanel zones={zones} />
+      )}
+      {neighborhoodsError && (
+        <div className="absolute top-24 left-4 right-4">
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 text-sm text-amber-200">
+            {neighborhoodsError}
+          </div>
+        </div>
+      )}
+      {neighborhoodsLoading && (
+        <div className="absolute top-24 right-4">
+          <div className="glass rounded-xl px-3 py-2 text-xs text-gray-300">
+            Loading neighborhood boundaries...
+          </div>
+        </div>
       )}
     </div>
   );

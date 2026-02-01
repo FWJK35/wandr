@@ -7,6 +7,8 @@ import type { Business, Zone } from '../../types';
 import LoadingSpinner from '../../components/shared/LoadingSpinner';
 
 const MAPBOX_TOKEN = (import.meta as any).env?.VITE_MAPBOX_TOKEN || '';
+const LOAD_ALL_ZONES = true;
+const ALL_ZONE_BOUNDS = { minLat: -90, maxLat: 90, minLng: -180, maxLng: 180 };
 
 const defaultCenter = {
   lat: 41.8268,
@@ -198,13 +200,16 @@ export default function GeometryEditor() {
     const maxLat = bounds?.getNorth() ?? lat + 0.02;
     const minLng = bounds?.getWest() ?? lng - 0.02;
     const maxLng = bounds?.getEast() ?? lng + 0.02;
+    const zoneBounds = LOAD_ALL_ZONES
+      ? ALL_ZONE_BOUNDS
+      : { minLat, maxLat, minLng, maxLng };
 
     setLoading(true);
     setStatus(null);
     try {
       const [businessData, zoneData] = await Promise.all([
         businessesApi.getNearby(lat, lng, 5000),
-        zonesApi.getInViewport({ minLat, maxLat, minLng, maxLng }),
+        zonesApi.getInViewport(zoneBounds),
       ]);
 
       setBusinesses(businessData);

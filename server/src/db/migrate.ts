@@ -110,30 +110,47 @@ const migrations = [
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   );`,
 
-  // Legacy neighborhoods table (deprecated; retained for backward compatibility)
-  `CREATE TABLE IF NOT EXISTS neighborhoods (
-    id UUID PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    boundary_coords JSONB NOT NULL,
-    bonus_points INTEGER DEFAULT 50,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-  );`,
-
   // Zones table with polygon coordinates
   `CREATE TABLE IF NOT EXISTS zones (
     id UUID PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     description TEXT,
-    neighborhood_id UUID REFERENCES neighborhoods(id) ON DELETE SET NULL,
     neighborhood_name VARCHAR(255),
     boundary_coords JSONB NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   );`,
   `ALTER TABLE zones ADD COLUMN IF NOT EXISTS neighborhood_name VARCHAR(255);`,
-
-  `CREATE INDEX IF NOT EXISTS idx_zones_neighborhood ON zones(neighborhood_id);`,
   `CREATE INDEX IF NOT EXISTS idx_zones_neighborhood_name ON zones(neighborhood_name);`,
+
+  // Migrate legacy neighborhood linkage into neighborhood_name and drop legacy schema
+  `DO $$
+   BEGIN
+     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'zones')
+        AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'neighborhoods')
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'zones' AND column_name = 'neighborhood_id') THEN
+       UPDATE zones z
+       SET neighborhood_name = COALESCE(z.neighborhood_name, n.name)
+       FROM neighborhoods n
+       WHERE z.neighborhood_id = n.id
+         AND (z.neighborhood_name IS NULL OR z.neighborhood_name = '');
+     END IF;
+   END $$;`,
+  `DO $$
+   DECLARE r RECORD;
+   BEGIN
+     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'neighborhoods') THEN
+       FOR r IN
+         SELECT conrelid::regclass AS table_name, conname
+         FROM pg_constraint
+         WHERE confrelid = 'neighborhoods'::regclass
+       LOOP
+         EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', r.table_name, r.conname);
+       END LOOP;
+     END IF;
+   END $$;`,
+  `ALTER TABLE IF EXISTS zones DROP COLUMN IF EXISTS neighborhood_id;`,
+  `DROP INDEX IF EXISTS idx_zones_neighborhood;`,
+  `DROP TABLE IF EXISTS neighborhoods CASCADE;`,
 
   // Zone progress table (simplified - captured when any business visited)
   `CREATE TABLE IF NOT EXISTS zone_progress (
