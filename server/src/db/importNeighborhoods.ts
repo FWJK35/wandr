@@ -23,7 +23,7 @@ async function main() {
   if (!res.ok) {
     throw new Error(`Failed to fetch GeoJSON: ${res.status} ${res.statusText}`);
   }
-  const geojson = await res.json();
+  const geojson = (await res.json()) as { type?: string; features?: any[] };
 
   if (geojson.type !== 'FeatureCollection' || !Array.isArray(geojson.features)) {
     throw new Error('GeoJSON must be a FeatureCollection');

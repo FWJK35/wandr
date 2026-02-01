@@ -151,8 +151,6 @@ export async function fetchBusinesses(): Promise<BusinessRecord[]> {
 }
 
 // Landmarks (CSV-backed)
-import fs from 'fs';
-import path from 'path';
 
 export async function fetchLandmarks(): Promise<LandmarkRecord[]> {
   const candidates = [
@@ -246,7 +244,7 @@ async function fetchWeatherTag(lat: number, lng: number): Promise<string> {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,precipitation,weather_code`;
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`weather fetch ${resp.status}`);
-    const data = await resp.json();
+    const data = (await resp.json()) as any;
     const code = data?.current?.weather_code;
     const precip = data?.current?.precipitation ?? 0;
     if (typeof code !== 'number') return 'unknown';

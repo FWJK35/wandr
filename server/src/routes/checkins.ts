@@ -88,7 +88,7 @@ async function reverseGeocodeNeighborhood(lng: number, lat: number): Promise<str
     const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?types=neighborhood&limit=1&access_token=${MAPBOX_TOKEN}`;
     const response = await fetch(url);
     if (!response.ok) return null;
-    const data = await response.json();
+    const data = (await response.json()) as { features?: Array<{ text?: string; place_name?: string }> };
     const feature = data?.features?.[0];
     if (!feature) return null;
     return feature.text || feature.place_name || null;

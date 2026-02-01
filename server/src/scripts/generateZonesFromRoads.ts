@@ -20,7 +20,7 @@ async function fetchRoadsBearing(lng: number, lat: number): Promise<number | nul
   try {
     const resp = await fetch(url);
     if (!resp.ok) return null;
-    const data = await resp.json();
+    const data = (await resp.json()) as { features?: RoadFeature[] };
     const feats: RoadFeature[] = data?.features || [];
     const bearings: number[] = [];
     feats.forEach((f) => {
@@ -56,7 +56,7 @@ async function generateZones() {
   if (!fs.existsSync(NEIGHBORHOODS_PATH)) {
     throw new Error(`Neighborhood GeoJSON not found at ${NEIGHBORHOODS_PATH}`);
   }
-  const neighborhoods = JSON.parse(fs.readFileSync(NEIGHBORHOODS_PATH, 'utf-8'));
+  const neighborhoods = JSON.parse(fs.readFileSync(NEIGHBORHOODS_PATH, 'utf-8')) as { features?: any[] };
   if (!neighborhoods?.features) throw new Error('Invalid neighborhoods geojson');
 
   console.log(`Loaded ${neighborhoods.features.length} neighborhoods.`);
@@ -85,8 +85,8 @@ async function generateZones() {
     for (const cell of grid.features) {
       const cellCentroid = turf.centroid(cell);
       if (!turf.booleanPointInPolygon(cellCentroid, feature)) continue;
-      const clipped = turf.intersect(cell, feature) || cell;
-      const coords = (clipped.geometry as turf.helpers.Polygon).coordinates[0];
+      const clipped = (turf.intersect(cell as any, feature as any) as any) || cell;
+      const coords = (clipped?.geometry?.coordinates?.[0] || []) as number[][];
       const id = uuidv4();
       count += 1;
       await execute(
