@@ -227,8 +227,7 @@ function FeedItemCard({ item, onLike }: FeedItemCardProps) {
       case 'quest_complete':
         return (
           <>
-            completed a quest and earned{' '}
-            <span className="text-primary-400 font-medium">+{item.content.pointsEarned} pts</span>
+            completed a quest
           </>
         );
       case 'badge_earned':

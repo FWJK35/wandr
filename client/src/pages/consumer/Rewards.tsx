@@ -21,7 +21,6 @@ export default function Rewards() {
   const [redeeming, setRedeeming] = useState(false);
   const [redeemResult, setRedeemResult] = useState<{
     redemptionCode: string;
-    pointsSpent: number;
   } | null>(null);
 
   useEffect(() => {
@@ -49,16 +48,14 @@ export default function Rewards() {
   }
 
   async function handleRedeem(reward: Reward) {
-    if (!user || user.points < reward.pointsCost) return;
+    if (!user) return;
 
     setRedeeming(true);
     try {
       const result = await rewardsApi.redeem(reward.id);
       setRedeemResult({
         redemptionCode: result.redemptionCode,
-        pointsSpent: result.pointsSpent,
       });
-      updateUser({ points: user.points - result.pointsSpent });
     } catch (err: any) {
       alert(err.response?.data?.error || 'Failed to redeem');
     } finally {
@@ -75,10 +72,6 @@ export default function Rewards() {
     <div className="p-4 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="font-display text-2xl font-bold">Rewards</h1>
-        <div className="flex items-center gap-1 bg-dark-100 px-3 py-1 rounded-full">
-          <span className="text-primary-400 font-semibold">{user?.points || 0}</span>
-          <span className="text-xs text-gray-400">pts</span>
-        </div>
       </div>
 
       {/* Tabs */}
@@ -146,9 +139,7 @@ export default function Rewards() {
 
             <div className="flex items-center justify-between py-3 border-y border-white/5">
               <span className="text-gray-400">Cost</span>
-              <span className="text-primary-400 font-semibold">
-                {selectedReward.pointsCost} pts
-              </span>
+              <span className="text-primary-400 font-semibold">Free</span>
             </div>
 
             <div>
@@ -169,14 +160,10 @@ export default function Rewards() {
             <Button
               onClick={() => handleRedeem(selectedReward)}
               loading={redeeming}
-              disabled={(user?.points || 0) < selectedReward.pointsCost}
               className="w-full"
               size="lg"
             >
-              {(user?.points || 0) < selectedReward.pointsCost
-                ? `Need ${selectedReward.pointsCost - (user?.points || 0)} more pts`
-                : 'Redeem Reward'
-              }
+              Redeem Reward
             </Button>
           </div>
         )}

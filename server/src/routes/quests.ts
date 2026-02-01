@@ -399,12 +399,7 @@ questsRouter.post('/:id/check', authenticate, async (req: AuthRequest, res: Resp
         [JSON.stringify(updatedProgress), id]
       );
 
-      // Award points
-      await query(
-        'UPDATE users SET points = points + $1 WHERE id = $2',
-        [quest.points_reward, userId]
-      );
-
+      // Points system disabled — skip user points award
       // Award badge if applicable
       if (quest.badge_reward_id) {
         await query(
@@ -448,4 +443,3 @@ questsRouter.post('/:id/check', authenticate, async (req: AuthRequest, res: Resp
     res.status(500).json({ error: 'Failed to check quest progress' });
   }
 });
-

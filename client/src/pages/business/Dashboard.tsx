@@ -317,7 +317,7 @@ function BusinessDetail() {
                         </div>
                         <p className="text-sm text-gray-400">{promo.description}</p>
                         <p className="text-sm text-primary-400 mt-1">
-                          +{promo.bonusPoints} bonus points
+                          Limited-time boost
                         </p>
                       </div>
                     </div>
@@ -352,9 +352,8 @@ function BusinessDetail() {
                           )}
                         </div>
                         <p className="text-sm text-gray-400">{challenge.description}</p>
-                        <p className="text-sm mt-1">
-                          <span className="text-primary-400">{challenge.pointsReward} pts</span>
-                          <span className="text-gray-500 ml-2">{challenge.completions} completions</span>
+                        <p className="text-sm mt-1 text-gray-500">
+                          {challenge.completions} completions
                         </p>
                       </div>
                     </div>
@@ -372,9 +371,9 @@ function BusinessDetail() {
               </div>
 
               <Card>
-                <p className="text-gray-400 text-center py-8">
-                  Create rewards that customers can redeem with their points!
-                </p>
+                  <p className="text-gray-400 text-center py-8">
+                    Create rewards customers can unlock after visiting.
+                  </p>
               </Card>
             </div>
           )}

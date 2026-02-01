@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { query, queryOne, execute } from '../db/index.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
-import { calculatePoints } from '../services/points.js';
+// Points disabled — keep structure but return zeros
 import { calculateQuestProgress, checkQuestComplete } from '../services/questProgress.js';
 import { fetchLandmarks, landmarkLegacyId, landmarkStableId } from '../quests/decisionEngine.js';
 
@@ -435,11 +435,13 @@ checkinsRouter.post('/', authenticate, async (req: AuthRequest, res: Response) =
     );
 
     // Calculate points
-    const pointsBreakdown = calculatePoints({
-      isFirstVisit,
-      friendCount: friendIds?.length || 0,
-      promotionBonus: promotion?.bonus_points || 0
-    });
+    const pointsBreakdown = {
+      base: 0,
+      friendBonus: 0,
+      promotionBonus: 0,
+      streakBonus: 0,
+      total: 0
+    };
 
     // Create check-in
     const checkinId = uuidv4();
@@ -450,10 +452,7 @@ checkinsRouter.post('/', authenticate, async (req: AuthRequest, res: Response) =
     );
 
     // Update user points
-    await query(
-      'UPDATE users SET points = points + $1 WHERE id = $2',
-      [pointsBreakdown.total, userId]
-    );
+    // Points system disabled — no user points update
 
     // Update streak
     await updateStreak(userId);
@@ -462,19 +461,7 @@ checkinsRouter.post('/', authenticate, async (req: AuthRequest, res: Response) =
     const zoneCapture = await checkAndUpdateZoneCapture(userId, business.latitude, business.longitude);
 
     // Add zone/neighborhood bonus points
-    let bonusPoints = 0;
-    if (zoneCapture.newZoneCaptured) {
-      bonusPoints += ZONE_CAPTURE_POINTS;
-    }
-    if (zoneCapture.newNeighborhoodCaptured) {
-      bonusPoints += NEIGHBORHOOD_CAPTURE_POINTS;
-    }
-    if (bonusPoints > 0) {
-      await query(
-        'UPDATE users SET points = points + $1 WHERE id = $2',
-        [bonusPoints, userId]
-      );
-    }
+    const bonusPoints = 0;
 
     const questCompletions = await redeemActiveQuests(userId);
     const questBonusPoints = questCompletions.reduce((sum, q) => sum + q.pointsEarned, 0);

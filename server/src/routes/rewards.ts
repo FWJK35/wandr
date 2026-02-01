@@ -164,19 +164,7 @@ rewardsRouter.post('/:id/redeem', authenticate, async (req: AuthRequest, res: Re
       return res.status(400).json({ error: 'Reward out of stock' });
     }
 
-    // Check user has enough points
-    const user = await queryOne<{ points: number }>(
-      'SELECT points FROM users WHERE id = $1',
-      [userId]
-    );
-
-    if (!user || user.points < reward.points_cost) {
-      return res.status(400).json({
-        error: 'Insufficient points',
-        required: reward.points_cost,
-        current: user?.points || 0
-      });
-    }
+    // Points system disabled: allow free redemption
 
     // Generate redemption code
     const redemptionCode = generateRedemptionCode();
@@ -189,11 +177,7 @@ rewardsRouter.post('/:id/redeem', authenticate, async (req: AuthRequest, res: Re
       [redemptionId, userId, id, redemptionCode]
     );
 
-    // Deduct points
-    await query(
-      'UPDATE users SET points = points - $1 WHERE id = $2',
-      [reward.points_cost, userId]
-    );
+    // Points system disabled: no deduction
 
     // Decrease quantity if limited
     if (reward.quantity_remaining !== null) {

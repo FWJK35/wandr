@@ -161,31 +161,25 @@ usersRouter.put('/me', authenticate, async (req: AuthRequest, res: Response) => 
   }
 });
 
-// GET /api/users/leaderboard - Get leaderboard
+// GET /api/users/leaderboard - Get leaderboard (by zones captured)
 usersRouter.get('/leaderboard/all', async (req, res: Response) => {
   try {
-    const type = req.query.type as string || 'all-time';
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
-
-    let timeFilter = '';
-    if (type === 'weekly') {
-      timeFilter = "WHERE created_at >= NOW() - INTERVAL '7 days'";
-    } else if (type === 'monthly') {
-      timeFilter = "WHERE created_at >= NOW() - INTERVAL '30 days'";
-    }
 
     const users = await query<{
       id: string;
       username: string;
       display_name: string;
-      points: number;
-      level: number;
       avatar_url: string | null;
+      zones_captured: string;
     }>(
-      `SELECT id, username, display_name, points, level, avatar_url
-       FROM users
-       ${timeFilter}
-       ORDER BY points DESC
+      `SELECT u.id, u.username, u.display_name, u.avatar_url,
+              COUNT(DISTINCT zp.zone_id) FILTER (WHERE zp.captured = true) AS zones_captured
+       FROM users u
+       LEFT JOIN zone_progress zp ON zp.user_id = u.id
+       GROUP BY u.id
+       HAVING COUNT(DISTINCT zp.zone_id) FILTER (WHERE zp.captured = true) > 0
+       ORDER BY COUNT(DISTINCT zp.zone_id) FILTER (WHERE zp.captured = true) DESC
        LIMIT $1`,
       [limit]
     );
@@ -195,9 +189,8 @@ usersRouter.get('/leaderboard/all', async (req, res: Response) => {
       id: u.id,
       username: u.username,
       displayName: u.display_name,
-      points: u.points,
-      level: u.level,
-      avatarUrl: u.avatar_url
+      avatarUrl: u.avatar_url,
+      zonesCaptured: parseInt(u.zones_captured || '0')
     })));
   } catch (error) {
     console.error('Get leaderboard error:', error);
