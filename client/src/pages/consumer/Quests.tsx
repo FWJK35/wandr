@@ -18,6 +18,7 @@ export default function Quests() {
   const [loading, setLoading] = useState(true);
   const [startingQuest, setStartingQuest] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [generatingLandmarks, setGeneratingLandmarks] = useState(false);
   const [generateMessage, setGenerateMessage] = useState<string | null>(null);
   const { location } = useLocation();
   const [nowTs, setNowTs] = useState<number>(Date.now());
@@ -120,7 +121,30 @@ export default function Quests() {
     }
   }
 
-  function handleClaimGenerated(gq: GeneratedQuest) {
+  async function handleGenerateLandmarkQuests() {
+    if (!location) {
+      setGenerateMessage('Location not available yet.');
+      return;
+    }
+    setGeneratingLandmarks(true);
+    setGenerateMessage(null);
+    try {
+      const resp = await questsApi.generateLandmarks({
+        userLat: location.latitude,
+        userLng: location.longitude,
+        windowMinutes: 480,
+      });
+      setGenerateMessage(`Generated ${resp.quests?.length ?? 0} landmark quests`);
+      await fetchQuests();
+    } catch (err) {
+      console.error('Failed to generate landmark quests:', err);
+      setGenerateMessage('Failed to generate landmark quests');
+    } finally {
+      setGeneratingLandmarks(false);
+    }
+  }
+
+function handleClaimGenerated(gq: GeneratedQuest) {
     if (claimingId) return;
     // Avoid duplicates by quest_id or business_id
     if (claimedIdsSet.has(gq.quest_id) || claimedUnique.some(c => c.business_id === gq.business_id)) {
@@ -171,7 +195,10 @@ export default function Quests() {
 
       <div className="flex items-center gap-2">
         <Button onClick={handleGenerateQuests} loading={generating}>
-          Generate 3 Quests (Gemini)
+          Find Local Businesses
+        </Button>
+        <Button onClick={handleGenerateLandmarkQuests} loading={generatingLandmarks} variant="secondary">
+          Find Local Landmarks
         </Button>
         {generateMessage && <span className="text-xs text-gray-400">{generateMessage}</span>}
       </div>
@@ -269,9 +296,11 @@ export default function Quests() {
                         {renderCountdown(gq.ends_at, nowTs)}
                       </div>
                       <div className="flex justify-between items-center mt-3">
-                        <div className="text-xs text-amber-200">
-                          Redeem coupon: {gq.suggested_percent_off ?? 0}%
-                        </div>
+                        {gq.suggested_percent_off !== null && gq.suggested_percent_off !== undefined && (
+                          <div className="text-xs text-amber-200">
+                            Redeem coupon: {gq.suggested_percent_off}%
+                          </div>
+                        )}
                         <Button size="sm" onClick={() => setQrQuest(gq)} disabled={claimingId !== null}>
                           Show QR
                         </Button>
@@ -452,17 +481,21 @@ function QRModal({ quest, onClose }: { quest: GeneratedQuest; onClose: () => voi
         <div className="flex justify-center mb-3">
           <img src={qrUrl} alt="Quest QR" className="w-48 h-48 rounded-lg bg-white p-2" />
         </div>
-        <div className="text-xs text-gray-300 mb-2">
-          Redeem coupon: {quest.suggested_percent_off ?? 0}%
-        </div>
-        <div className="space-y-2 mb-2">
-          <Button className="w-full" onClick={handlePay} loading={paying}>
-            Pay with Stripe (mock)
-          </Button>
-          {payStatus && (
-            <p className="text-xs text-center text-primary-400">{payStatus}</p>
-          )}
-        </div>
+        {quest.suggested_percent_off !== null && quest.suggested_percent_off !== undefined && (
+          <div className="text-xs text-gray-300 mb-2">
+            Redeem coupon: {quest.suggested_percent_off}%
+          </div>
+        )}
+        {!quest.is_landmark && (
+          <div className="space-y-2 mb-2">
+            <Button className="w-full" onClick={handlePay} loading={paying}>
+              Pay with Stripe (mock)
+            </Button>
+            {payStatus && (
+              <p className="text-xs text-center text-primary-400">{payStatus}</p>
+            )}
+          </div>
+        )}
         <Button className="w-full" variant="secondary" onClick={onClose}>Close</Button>
       </div>
     </div>

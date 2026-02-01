@@ -289,6 +289,11 @@ export const questsApi = {
     return res.data;
   },
 
+  generateLandmarks: async (data: { userLat: number; userLng: number; weatherTag?: string; windowMinutes?: number }) => {
+    const res = await api.post(`/quests/generate-landmarks`, data);
+    return res.data;
+  },
+
   getGeneratedActive: async () => {
     const res = await api.get<{
       quest_id: string;
