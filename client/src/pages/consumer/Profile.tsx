@@ -34,7 +34,26 @@ export default function Profile() {
         setProfile(profileData);
         setBadges(badgeData);
         setStats(profileData.stats);
-        setLeaderboard(leaderboardData);
+
+        const mockLeaders = [
+          { id: 'mock-1', username: 'avery_scout', displayName: 'Avery Scout', zonesCaptured: 18 },
+          { id: 'mock-2', username: 'brooklyn_w', displayName: 'Brooklyn Wilder', zonesCaptured: 15 },
+          { id: 'mock-3', username: 'casey_roam', displayName: 'Casey Roam', zonesCaptured: 13 },
+          { id: 'mock-4', username: 'dakota_trail', displayName: 'Dakota Trail', zonesCaptured: 11 }
+        ];
+
+        const combined = [...leaderboardData, ...mockLeaders];
+        const uniqueById = new Map<string, any>();
+        combined.forEach((entry) => {
+          if (!uniqueById.has(entry.id)) {
+            uniqueById.set(entry.id, entry);
+          }
+        });
+        const ranked = Array.from(uniqueById.values())
+          .sort((a, b) => (b.zonesCaptured || 0) - (a.zonesCaptured || 0))
+          .map((entry, idx) => ({ ...entry, rank: idx + 1 }));
+
+        setLeaderboard(ranked);
 
         // Get detailed stats if own profile
         if (isOwnProfile) {
@@ -129,10 +148,7 @@ export default function Profile() {
                 <div className="flex-1">
                   <p className="font-medium">{entry.displayName}</p>
                 </div>
-                <div className="text-sm">
-                  <span className="text-primary-400">{entry.points}</span>
-                  <span className="text-gray-500"> pts</span>
-                </div>
+        <div className="text-sm text-gray-400">Zones: {entry.zonesCaptured ?? 0}</div>
               </div>
             ))}
           </div>

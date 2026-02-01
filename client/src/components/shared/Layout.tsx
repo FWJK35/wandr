@@ -80,14 +80,8 @@ export default function Layout() {
       {!isMapPage && (
         <header className="bg-dark-200 border-b border-white/5 px-4 py-3 flex items-center justify-between">
           <h1 className="font-display font-bold text-xl text-primary-400">Wandr</h1>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 bg-dark-100 px-3 py-1 rounded-full">
-              <span className="text-primary-400 font-semibold">{user?.points || 0}</span>
-              <span className="text-xs text-gray-400">pts</span>
-            </div>
-            <div className="w-8 h-8 rounded-full bg-primary-500/20 flex items-center justify-center">
-              <span className="text-sm">{user?.displayName?.charAt(0) || '?'}</span>
-            </div>
+          <div className="w-8 h-8 rounded-full bg-primary-500/20 flex items-center justify-center">
+            <span className="text-sm">{user?.displayName?.charAt(0) || '?'}</span>
           </div>
         </header>
       )}

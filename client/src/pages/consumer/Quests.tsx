@@ -267,12 +267,6 @@ function handleClaimGenerated(gq: GeneratedQuest) {
                       <CardHeader
                         title={gq.title}
                         subtitle={undefined}
-                        action={
-                          <div className="flex items-center gap-2 text-sm">
-                            <span className="text-primary-400 font-semibold">+{gq.points}</span>
-                            <span className="text-gray-500">pts</span>
-                          </div>
-                        }
                       />
                       <p className="text-sm text-gray-300 mb-2">{gq.short_prompt}</p>
                       <div className="text-xs text-gray-400 mb-3">
@@ -406,12 +400,7 @@ function QuestCard({ quest, onStart, loading, showProgress, completed }: QuestCa
         title={quest.title}
         subtitle={quest.questType}
         icon="🎯"
-        action={
-          <div className="flex items-center gap-2">
-            <span className="text-primary-400 font-semibold">+{quest.pointsReward}</span>
-            <span className="text-gray-500 text-sm">pts</span>
-          </div>
-        }
+                        action={null}
       />
 
       <p className="text-sm text-gray-400 mb-4">{quest.description}</p>

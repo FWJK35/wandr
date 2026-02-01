@@ -226,45 +226,6 @@ export default function BusinessPanel({ business, userLocation, activeQuest, onC
                 <span className="text-xl">🎉</span>
                 <span className="font-semibold text-primary-400">Check-in Successful!</span>
               </div>
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>
-                  <span className="text-gray-400">Base:</span>
-                  <span className="ml-1 text-white">+{checkinResult.points.base}</span>
-                </div>
-                {checkinResult.points.promotionBonus > 0 && (
-                  <div>
-                    <span className="text-gray-400">Promo:</span>
-                    <span className="ml-1 text-yellow-400">+{checkinResult.points.promotionBonus}</span>
-                  </div>
-                )}
-                {checkinResult.points.streakBonus > 0 && (
-                  <div>
-                    <span className="text-gray-400">Streak:</span>
-                    <span className="ml-1 text-orange-400">+{checkinResult.points.streakBonus}</span>
-                  </div>
-                )}
-                {checkinResult.points.zoneCaptureBonus && checkinResult.points.zoneCaptureBonus > 0 && (
-                  <div>
-                    <span className="text-gray-400">Zone:</span>
-                    <span className="ml-1 text-green-400">+{checkinResult.points.zoneCaptureBonus}</span>
-                  </div>
-                )}
-                {checkinResult.points.neighborhoodBonus && checkinResult.points.neighborhoodBonus > 0 && (
-                  <div>
-                    <span className="text-gray-400">Hood:</span>
-                    <span className="ml-1 text-emerald-400">+{checkinResult.points.neighborhoodBonus}</span>
-                  </div>
-                )}
-                {checkinResult.points.questBonus && checkinResult.points.questBonus > 0 && (
-                  <div>
-                    <span className="text-gray-400">Quest:</span>
-                    <span className="ml-1 text-purple-300">+{checkinResult.points.questBonus}</span>
-                  </div>
-                )}
-                <div className="col-span-2 pt-2 border-t border-white/10">
-                  <span className="font-semibold text-primary-400">Total: +{checkinResult.points.total} points</span>
-                </div>
-              </div>
               {checkinResult.zoneCapture && (
                 <div className="mt-2 pt-2 border-t border-white/10">
                   <div className="flex items-center gap-2 text-sm">
