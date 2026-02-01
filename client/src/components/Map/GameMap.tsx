@@ -1,19 +1,19 @@
-import { useCallback, useState, useEffect, useRef } from 'react';
-import Map, { NavigationControl, GeolocateControl } from 'react-map-gl';
-import type { MapRef } from 'react-map-gl';
+import { useCallback, useState, useEffect, useRef, useMemo } from 'react';
+import MapGL, { NavigationControl, GeolocateControl, Source, Layer } from 'react-map-gl';
+import type { MapRef, FillLayer, LineLayer } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { useLocation } from '../../hooks/useLocation';
 import { businessesApi, zonesApi } from '../../services/api';
-import type { Business, Zone, Neighborhood } from '../../types';
+import type { Business, Zone } from '../../types';
 import BusinessMarker from './BusinessMarker';
 import UserMarker from './UserMarker';
 import ZoneOverlay from './ZoneOverlay';
-import NeighborhoodOverlay from './NeighborhoodOverlay';
 import BusinessPanel from './BusinessPanel';
 import TerritoryPanel from './TerritoryPanel';
 import LoadingSpinner from '../shared/LoadingSpinner';
 
 const MAPBOX_TOKEN = (import.meta as any).env?.VITE_MAPBOX_TOKEN || '';
+const NEIGHBORHOODS_GEOJSON_URL = '/neighborhoods-providence.geojson';
 
 const defaultCenter = {
   lat: 41.8268,
@@ -21,6 +21,14 @@ const defaultCenter = {
 };
 
 type MapMode = 'explore' | 'territory';
+
+const normalizeNeighborhoodName = (value: string) => (
+  value
+    .toLowerCase()
+    .replace(/neighborhood/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+);
 
 export default function GameMap() {
   const mapRef = useRef<MapRef>(null);
@@ -34,12 +42,45 @@ export default function GameMap() {
   } = useLocation(true);
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
-  const [neighborhoods, setNeighborhoods] = useState<Neighborhood[]>([]);
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null);
   const [loading, setLoading] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapMode, setMapMode] = useState<MapMode>('explore');
   const lastFetchRef = useRef<{ lat: number; lng: number } | null>(null);
+  const [neighborhoodGeojson, setNeighborhoodGeojson] = useState<{ type: 'FeatureCollection'; features: any[] } | null>(null);
+  const [neighborhoodsLoading, setNeighborhoodsLoading] = useState(false);
+  const [neighborhoodsError, setNeighborhoodsError] = useState<string | null>(null);
+
+  const neighborhoodFillLayer: FillLayer = {
+    id: 'neighborhood-fill',
+    type: 'fill',
+    source: 'neighborhoods-geo',
+    paint: {
+      'fill-color': [
+        'case',
+        ['boolean', ['get', 'captured'], false],
+        '#22c55e',
+        '#d1d5db'
+      ],
+      'fill-opacity': 0.08
+    }
+  };
+
+  const neighborhoodLineLayer: LineLayer = {
+    id: 'neighborhood-line',
+    type: 'line',
+    source: 'neighborhoods-geo',
+    paint: {
+      'line-color': [
+        'case',
+        ['boolean', ['get', 'captured'], false],
+        '#86efac',
+        '#9ca3af'
+      ],
+      'line-width': 1.5,
+      'line-opacity': 0.6
+    }
+  };
 
   const [spoofOpen, setSpoofOpen] = useState(false);
   const [spoofLat, setSpoofLat] = useState('');
@@ -54,6 +95,65 @@ export default function GameMap() {
     pitch: 60,
     bearing: 0,
   });
+
+  const loadNeighborhoodBoundaries = useCallback(async () => {
+    if (neighborhoodGeojson || neighborhoodsLoading) return;
+    setNeighborhoodsLoading(true);
+    setNeighborhoodsError(null);
+    try {
+      const response = await fetch(NEIGHBORHOODS_GEOJSON_URL, { cache: 'force-cache' });
+      if (!response.ok) {
+        throw new Error(`Failed to load neighborhoods: ${response.status}`);
+      }
+      const data = await response.json();
+      setNeighborhoodGeojson(data);
+    } catch (err) {
+      console.error('Failed to load neighborhood boundaries:', err);
+      setNeighborhoodsError('Failed to load neighborhood boundaries.');
+    } finally {
+      setNeighborhoodsLoading(false);
+    }
+  }, [neighborhoodGeojson, neighborhoodsLoading]);
+
+  const neighborhoodRenderGeojson = useMemo(() => {
+    if (!neighborhoodGeojson) return null;
+
+    const zoneGroups = new Map<string, { total: number; captured: number }>();
+    zones.forEach((zone) => {
+      if (!zone.neighborhoodName) return;
+      const key = normalizeNeighborhoodName(zone.neighborhoodName);
+      if (!key) return;
+      const entry = zoneGroups.get(key) || { total: 0, captured: 0 };
+      entry.total += 1;
+      if (zone.captured) entry.captured += 1;
+      zoneGroups.set(key, entry);
+    });
+
+    if (zoneGroups.size === 0) {
+      return { ...neighborhoodGeojson, features: [] };
+    }
+
+    const features = neighborhoodGeojson.features
+      .map((feature: any) => {
+        const rawName = feature?.properties?.LNAME || feature?.properties?.name;
+        if (!rawName) return null;
+        const key = normalizeNeighborhoodName(String(rawName));
+        const group = key ? zoneGroups.get(key) : null;
+        if (!group || group.total === 0) return null;
+        const captured = group.captured >= group.total;
+        return {
+          ...feature,
+          properties: {
+            ...feature.properties,
+            captured,
+            hasZones: true,
+          },
+        };
+      })
+      .filter((feature: any) => feature);
+
+    return { ...neighborhoodGeojson, features };
+  }, [neighborhoodGeojson, zones]);
 
   // Update view when user location changes (always center on player)
   useEffect(() => {
@@ -93,7 +193,7 @@ export default function GameMap() {
     setLoading(true);
 
     try {
-      const [businessData, zoneData, neighborhoodData] = await Promise.all([
+      const [businessData, zoneData] = await Promise.all([
         businessesApi.getNearby(lat, lng, 2000),
         zonesApi.getInViewport({
           minLat: lat - 0.02,
@@ -101,12 +201,10 @@ export default function GameMap() {
           minLng: lng - 0.02,
           maxLng: lng + 0.02,
         }),
-        zonesApi.getNeighborhoods(),
       ]);
 
       setBusinesses(businessData);
       setZones(zoneData);
-      setNeighborhoods(neighborhoodData);
     } catch (err) {
       console.error('Failed to fetch map data:', err);
     } finally {
@@ -119,6 +217,11 @@ export default function GameMap() {
       fetchData(location.latitude, location.longitude);
     }
   }, [location, fetchData]);
+
+  useEffect(() => {
+    if (!mapLoaded || mapMode !== 'territory') return;
+    loadNeighborhoodBoundaries();
+  }, [mapLoaded, mapMode, loadNeighborhoodBoundaries]);
 
   const handleMapLoad = useCallback(() => {
     setMapLoaded(true);
@@ -230,7 +333,7 @@ export default function GameMap() {
 
   return (
     <div className="relative h-full">
-      <Map
+      <MapGL
         ref={mapRef}
         {...viewState}
         dragPan={false} // disable left-click panning; keep right-drag rotation
@@ -263,15 +366,18 @@ export default function GameMap() {
           showUserHeading
         />
 
-        {/* Territory mode: Show neighborhoods and zones */}
+        {/* Territory mode: Show zones */}
         {mapLoaded && mapMode === 'territory' && (
           <>
-            {neighborhoods.map((neighborhood) => (
-              <NeighborhoodOverlay key={neighborhood.id} neighborhood={neighborhood} />
-            ))}
             {zones.map((zone) => (
               <ZoneOverlay key={zone.id} zone={zone} />
             ))}
+            {neighborhoodRenderGeojson && neighborhoodRenderGeojson.features.length > 0 && (
+              <Source id="neighborhoods-geo" type="geojson" data={neighborhoodRenderGeojson}>
+                <Layer {...neighborhoodFillLayer} />
+                <Layer {...neighborhoodLineLayer} />
+              </Source>
+            )}
           </>
         )}
 
@@ -291,7 +397,7 @@ export default function GameMap() {
           />
         )}
 
-      </Map>
+      </MapGL>
 
             {/* Mode toggle + testing tools */}
       <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
@@ -406,7 +512,19 @@ export default function GameMap() {
                 <div>
                   <span className="text-gray-400">Neighborhoods:</span>
                   <span className="ml-1 text-white font-semibold">
-                    {neighborhoods.filter(n => n.fullyCaptured).length}/{neighborhoods.length}
+                    {(() => {
+                      const groups = new Map<string, { total: number; captured: number }>();
+                      zones.forEach(zone => {
+                        const name = zone.neighborhoodName || 'Unassigned';
+                        const entry = groups.get(name) || { total: 0, captured: 0 };
+                        entry.total += 1;
+                        if (zone.captured) entry.captured += 1;
+                        groups.set(name, entry);
+                      });
+                      const totals = Array.from(groups.values());
+                      const fullyCaptured = totals.filter(g => g.total > 0 && g.captured >= g.total).length;
+                      return `${fullyCaptured}/${totals.length}`;
+                    })()}
                   </span>
                 </div>
               </>
@@ -456,10 +574,23 @@ export default function GameMap() {
 
       {/* Territory panel (territory mode) */}
       {mapMode === 'territory' && (
-        <TerritoryPanel
-          zones={zones}
-          neighborhoods={neighborhoods}
-        />
+        <>
+          <TerritoryPanel zones={zones} />
+          {neighborhoodsError && (
+            <div className="absolute top-24 left-4 right-4">
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 text-sm text-amber-200">
+                {neighborhoodsError}
+              </div>
+            </div>
+          )}
+          {neighborhoodsLoading && (
+            <div className="absolute top-24 right-4">
+              <div className="glass rounded-xl px-3 py-2 text-xs text-gray-300">
+                Loading neighborhood boundaries...
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

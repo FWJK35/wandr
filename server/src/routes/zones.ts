@@ -5,6 +5,55 @@ import { optionalAuth, authenticate, AuthRequest } from '../middleware/auth.js';
 
 export const zonesRouter = Router();
 
+const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN;
+
+const getPolygonCentroid = (coords: [number, number][]) => {
+  if (coords.length === 0) return null;
+  const first = coords[0];
+  const last = coords[coords.length - 1];
+  const unique = (coords.length > 1 && first[0] === last[0] && first[1] === last[1])
+    ? coords.slice(0, -1)
+    : coords;
+  if (unique.length === 0) return null;
+  const sum = unique.reduce(
+    (acc, [lng, lat]) => ({ lng: acc.lng + lng, lat: acc.lat + lat }),
+    { lng: 0, lat: 0 }
+  );
+  return { lng: sum.lng / unique.length, lat: sum.lat / unique.length };
+};
+
+async function reverseGeocodeNeighborhood(lng: number, lat: number): Promise<string | null> {
+  if (!MAPBOX_TOKEN) return null;
+  try {
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?types=neighborhood&limit=1&access_token=${MAPBOX_TOKEN}`;
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const data = await response.json();
+    const feature = data?.features?.[0];
+    if (!feature) return null;
+    return feature.text || feature.place_name || null;
+  } catch (error) {
+    console.error('Mapbox reverse geocode error:', error);
+    return null;
+  }
+}
+
+async function hydrateNeighborhoodName(zone: {
+  id: string;
+  neighborhood_name: string | null;
+  boundary_coords: any;
+}): Promise<string | null> {
+  if (zone.neighborhood_name) return zone.neighborhood_name;
+  const coords = parseBoundaryCoords(zone.boundary_coords);
+  const centroid = getPolygonCentroid(coords);
+  if (!centroid) return null;
+  const name = await reverseGeocodeNeighborhood(centroid.lng, centroid.lat);
+  if (name) {
+    await execute('UPDATE zones SET neighborhood_name = $1 WHERE id = $2', [name, zone.id]);
+  }
+  return name;
+}
+
 // Helper to check if a point is inside a polygon
 function pointInPolygon(lng: number, lat: number, polygon: [number, number][]): boolean {
   let inside = false;
@@ -45,42 +94,10 @@ function normalizeBoundaryCoords(coords: any): [number, number][] | null {
   return normalized;
 }
 
-// POST /api/zones/neighborhoods - Create neighborhood
-zonesRouter.post('/neighborhoods', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const { name, description, coordinates, bonusPoints } = req.body;
-    if (!name || typeof name !== 'string') {
-      return res.status(400).json({ error: 'name is required' });
-    }
-    const normalized = normalizeBoundaryCoords(coordinates);
-    if (!normalized) {
-      return res.status(400).json({ error: 'coordinates must be an array of [lng, lat] values' });
-    }
-
-    const id = uuidv4();
-    await execute(
-      `INSERT INTO neighborhoods (id, name, description, boundary_coords, bonus_points, created_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())`,
-      [
-        id,
-        name,
-        typeof description === 'string' ? description : null,
-        JSON.stringify(normalized),
-        typeof bonusPoints === 'number' ? bonusPoints : 50,
-      ]
-    );
-
-    res.status(201).json({ id });
-  } catch (error) {
-    console.error('Create neighborhood error:', error);
-    res.status(500).json({ error: 'Failed to create neighborhood' });
-  }
-});
-
 // POST /api/zones - Create zone
 zonesRouter.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { name, description, neighborhoodId, coordinates } = req.body;
+    const { name, description, coordinates } = req.body;
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'name is required' });
     }
@@ -88,67 +105,28 @@ zonesRouter.post('/', authenticate, async (req: AuthRequest, res: Response) => {
     if (!normalized) {
       return res.status(400).json({ error: 'coordinates must be an array of [lng, lat] values' });
     }
+    const centroid = getPolygonCentroid(normalized);
+    const neighborhoodName = centroid
+      ? await reverseGeocodeNeighborhood(centroid.lng, centroid.lat)
+      : null;
 
     const id = uuidv4();
     await execute(
-      `INSERT INTO zones (id, name, description, neighborhood_id, boundary_coords, created_at)
+      `INSERT INTO zones (id, name, description, neighborhood_name, boundary_coords, created_at)
        VALUES ($1, $2, $3, $4, $5, NOW())`,
       [
         id,
         name,
         typeof description === 'string' ? description : null,
-        neighborhoodId || null,
+        neighborhoodName,
         JSON.stringify(normalized),
       ]
     );
 
-    res.status(201).json({ id });
+    res.status(201).json({ id, neighborhoodName });
   } catch (error) {
     console.error('Create zone error:', error);
     res.status(500).json({ error: 'Failed to create zone' });
-  }
-});
-
-// PATCH /api/zones/neighborhoods/:id - Update neighborhood metadata
-zonesRouter.patch('/neighborhoods/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { name, description, bonusPoints } = req.body;
-    const updates: string[] = [];
-    const values: any[] = [];
-    let index = 1;
-
-    if (name !== undefined) {
-      updates.push(`name = $${index++}`);
-      values.push(name);
-    }
-    if (description !== undefined) {
-      updates.push(`description = $${index++}`);
-      values.push(description);
-    }
-    if (bonusPoints !== undefined) {
-      updates.push(`bonus_points = $${index++}`);
-      values.push(bonusPoints);
-    }
-
-    if (updates.length === 0) {
-      return res.status(400).json({ error: 'No fields to update' });
-    }
-
-    values.push(id);
-    const updated = await execute(
-      `UPDATE neighborhoods SET ${updates.join(', ')} WHERE id = $${index}`,
-      values
-    );
-
-    if (updated === 0) {
-      return res.status(404).json({ error: 'Neighborhood not found' });
-    }
-
-    res.json({ id });
-  } catch (error) {
-    console.error('Update neighborhood error:', error);
-    res.status(500).json({ error: 'Failed to update neighborhood' });
   }
 });
 
@@ -156,7 +134,7 @@ zonesRouter.patch('/neighborhoods/:id', authenticate, async (req: AuthRequest, r
 zonesRouter.patch('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, description, neighborhoodId } = req.body;
+    const { name, description } = req.body;
     const updates: string[] = [];
     const values: any[] = [];
     let index = 1;
@@ -168,10 +146,6 @@ zonesRouter.patch('/:id', authenticate, async (req: AuthRequest, res: Response) 
     if (description !== undefined) {
       updates.push(`description = $${index++}`);
       values.push(description);
-    }
-    if ('neighborhoodId' in req.body) {
-      updates.push(`neighborhood_id = $${index++}`);
-      values.push(neighborhoodId || null);
     }
 
     if (updates.length === 0) {
@@ -188,25 +162,10 @@ zonesRouter.patch('/:id', authenticate, async (req: AuthRequest, res: Response) 
       return res.status(404).json({ error: 'Zone not found' });
     }
 
-    res.json({ id });
+    res.json({ id, neighborhoodName });
   } catch (error) {
     console.error('Update zone error:', error);
     res.status(500).json({ error: 'Failed to update zone' });
-  }
-});
-
-// DELETE /api/zones/neighborhoods/:id - Delete neighborhood
-zonesRouter.delete('/neighborhoods/:id', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const { id } = req.params;
-    const deleted = await execute('DELETE FROM neighborhoods WHERE id = $1', [id]);
-    if (deleted === 0) {
-      return res.status(404).json({ error: 'Neighborhood not found' });
-    }
-    res.json({ id });
-  } catch (error) {
-    console.error('Delete neighborhood error:', error);
-    res.status(500).json({ error: 'Failed to delete neighborhood' });
   }
 });
 
@@ -225,33 +184,6 @@ zonesRouter.delete('/:id', authenticate, async (req: AuthRequest, res: Response)
   }
 });
 
-// PATCH /api/zones/neighborhoods/:id/boundary - Update neighborhood boundary
-zonesRouter.patch('/neighborhoods/:id/boundary', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { coordinates } = req.body;
-    const normalized = normalizeBoundaryCoords(coordinates);
-
-    if (!normalized) {
-      return res.status(400).json({ error: 'coordinates must be an array of [lng, lat] values' });
-    }
-
-    const updated = await execute(
-      'UPDATE neighborhoods SET boundary_coords = $1 WHERE id = $2',
-      [JSON.stringify(normalized), id]
-    );
-
-    if (updated === 0) {
-      return res.status(404).json({ error: 'Neighborhood not found' });
-    }
-
-    res.json({ id });
-  } catch (error) {
-    console.error('Update neighborhood boundary error:', error);
-    res.status(500).json({ error: 'Failed to update neighborhood boundary' });
-  }
-});
-
 // PATCH /api/zones/:id/boundary - Update zone boundary
 zonesRouter.patch('/:id/boundary', authenticate, async (req: AuthRequest, res: Response) => {
   try {
@@ -263,9 +195,22 @@ zonesRouter.patch('/:id/boundary', authenticate, async (req: AuthRequest, res: R
       return res.status(400).json({ error: 'coordinates must be an array of [lng, lat] values' });
     }
 
+    let neighborhoodName = null;
+    const centroid = getPolygonCentroid(normalized);
+    if (centroid) {
+      neighborhoodName = await reverseGeocodeNeighborhood(centroid.lng, centroid.lat);
+    }
+    if (!neighborhoodName) {
+      const existing = await queryOne<{ neighborhood_name: string | null }>(
+        'SELECT neighborhood_name FROM zones WHERE id = $1',
+        [id]
+      );
+      neighborhoodName = existing?.neighborhood_name ?? null;
+    }
+
     const updated = await execute(
-      'UPDATE zones SET boundary_coords = $1 WHERE id = $2',
-      [JSON.stringify(normalized), id]
+      'UPDATE zones SET boundary_coords = $1, neighborhood_name = $2 WHERE id = $3',
+      [JSON.stringify(normalized), neighborhoodName, id]
     );
 
     if (updated === 0) {
@@ -276,87 +221,6 @@ zonesRouter.patch('/:id/boundary', authenticate, async (req: AuthRequest, res: R
   } catch (error) {
     console.error('Update zone boundary error:', error);
     res.status(500).json({ error: 'Failed to update zone boundary' });
-  }
-});
-
-// GET /api/zones/neighborhoods - Get all neighborhoods with progress
-// NOTE: Must come BEFORE /:id route
-zonesRouter.get('/neighborhoods', optionalAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    // Get all neighborhoods
-    const neighborhoods = await query<{
-      id: string;
-      name: string;
-      description: string;
-      boundary_coords: any;
-      bonus_points: number;
-    }>(
-      'SELECT id, name, description, boundary_coords, bonus_points FROM neighborhoods'
-    );
-
-    // Get zone counts per neighborhood
-    const zoneCounts = await query<{
-      neighborhood_id: string;
-      total: string;
-    }>(
-      `SELECT neighborhood_id, COUNT(*) as total
-       FROM zones
-       WHERE neighborhood_id IS NOT NULL
-       GROUP BY neighborhood_id`
-    );
-    const zoneCountMap = new Map(zoneCounts.map(z => [z.neighborhood_id, parseInt(z.total)]));
-
-    // Get user's captured zones per neighborhood
-    let capturedCounts: Map<string, number> = new Map();
-    let fullyCaptured: Set<string> = new Set();
-
-    if (req.user) {
-      const captured = await query<{
-        neighborhood_id: string;
-        captured_count: string;
-      }>(
-        `SELECT z.neighborhood_id, COUNT(*) as captured_count
-         FROM zone_progress zp
-         JOIN zones z ON z.id = zp.zone_id
-         WHERE zp.user_id = $1 AND zp.captured = true AND z.neighborhood_id IS NOT NULL
-         GROUP BY z.neighborhood_id`,
-        [req.user.id]
-      );
-      capturedCounts = new Map(captured.map(c => [c.neighborhood_id, parseInt(c.captured_count)]));
-
-      // Check which neighborhoods are fully captured
-      const fullyComplete = await query<{ neighborhood_id: string }>(
-        `SELECT neighborhood_id FROM neighborhood_progress
-         WHERE user_id = $1 AND fully_captured = true`,
-        [req.user.id]
-      );
-      fullyCaptured = new Set(fullyComplete.map(f => f.neighborhood_id));
-    }
-
-    res.json(neighborhoods.map(n => {
-      const coords = parseBoundaryCoords(n.boundary_coords);
-      const totalZones = zoneCountMap.get(n.id) || 0;
-      const capturedZones = capturedCounts.get(n.id) || 0;
-      const percentCaptured = totalZones > 0 ? Math.round((capturedZones / totalZones) * 100) : 0;
-
-      return {
-        id: n.id,
-        name: n.name,
-        description: n.description,
-        boundary: {
-          type: 'Polygon',
-          coordinates: [coords]
-        },
-        bonusPoints: n.bonus_points,
-        totalZones,
-        capturedZones,
-        percentCaptured,
-        fullyCaptured: fullyCaptured.has(n.id)
-      };
-    }));
-  } catch (error) {
-    console.error('Get neighborhoods error:', error);
-    res.status(500).json({ error: 'Failed to get neighborhoods' });
   }
 });
 
@@ -377,7 +241,7 @@ zonesRouter.get('/stats/leaderboard', async (req, res: Response) => {
       `SELECT
         u.id as user_id, u.username, u.display_name, u.avatar_url,
         COUNT(DISTINCT zp.zone_id) FILTER (WHERE zp.captured = true) as zones_captured,
-        COUNT(DISTINCT np.neighborhood_id) FILTER (WHERE np.fully_captured = true) as neighborhoods_captured
+        COUNT(DISTINCT np.neighborhood_name) FILTER (WHERE np.fully_captured = true) as neighborhoods_captured
        FROM users u
        LEFT JOIN zone_progress zp ON zp.user_id = u.id
        LEFT JOIN neighborhood_progress np ON np.user_id = u.id
@@ -420,14 +284,11 @@ zonesRouter.get('/', optionalAuth, async (req: AuthRequest, res: Response) => {
       id: string;
       name: string;
       description: string;
-      neighborhood_id: string | null;
       neighborhood_name: string | null;
       boundary_coords: any;
     }>(
-      `SELECT z.id, z.name, z.description, z.neighborhood_id,
-              n.name as neighborhood_name, z.boundary_coords
-       FROM zones z
-       LEFT JOIN neighborhoods n ON n.id = z.neighborhood_id`
+      `SELECT id, name, description, neighborhood_name, boundary_coords
+       FROM zones`
     );
 
     // Filter zones that overlap with viewport
@@ -443,6 +304,15 @@ zonesRouter.get('/', optionalAuth, async (req: AuthRequest, res: Response) => {
       // Check for overlap
       return !(zoneMaxLat < minLat || zoneMinLat > maxLat || zoneMaxLng < minLng || zoneMinLng > maxLng);
     });
+
+    await Promise.all(
+      visibleZones.map(async (zone) => {
+        if (!zone.neighborhood_name) {
+          const name = await hydrateNeighborhoodName(zone);
+          zone.neighborhood_name = name;
+        }
+      })
+    );
 
     // Get user's captured zones
     let capturedZoneIds: Set<string> = new Set();
@@ -460,7 +330,6 @@ zonesRouter.get('/', optionalAuth, async (req: AuthRequest, res: Response) => {
         id: z.id,
         name: z.name,
         description: z.description,
-        neighborhoodId: z.neighborhood_id,
         neighborhoodName: z.neighborhood_name,
         boundary: {
           type: 'Polygon',
@@ -485,15 +354,12 @@ zonesRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response) =>
       id: string;
       name: string;
       description: string;
-      neighborhood_id: string | null;
       neighborhood_name: string | null;
       boundary_coords: any;
     }>(
-      `SELECT z.id, z.name, z.description, z.neighborhood_id,
-              n.name as neighborhood_name, z.boundary_coords
-       FROM zones z
-       LEFT JOIN neighborhoods n ON n.id = z.neighborhood_id
-       WHERE z.id = $1`,
+      `SELECT id, name, description, neighborhood_name, boundary_coords
+       FROM zones
+       WHERE id = $1`,
       [id]
     );
 
@@ -502,6 +368,10 @@ zonesRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response) =>
     }
 
     const coords = parseBoundaryCoords(zone.boundary_coords);
+    if (!zone.neighborhood_name) {
+      const name = await hydrateNeighborhoodName(zone);
+      zone.neighborhood_name = name;
+    }
 
     // Get businesses in zone (check if point in polygon)
     const allBusinesses = await query<{
@@ -532,7 +402,6 @@ zonesRouter.get('/:id', optionalAuth, async (req: AuthRequest, res: Response) =>
       id: zone.id,
       name: zone.name,
       description: zone.description,
-      neighborhoodId: zone.neighborhood_id,
       neighborhoodName: zone.neighborhood_name,
       boundary: {
         type: 'Polygon',

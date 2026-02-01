@@ -30,7 +30,6 @@ export default function BusinessPanel({ business, userLocation, onCheckInComplet
       neighborhoodName?: string;
     };
     neighborhoodCapture?: {
-      neighborhoodId: string;
       neighborhoodName: string;
     };
   } | null>(null);

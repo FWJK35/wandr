@@ -110,7 +110,7 @@ const migrations = [
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   );`,
 
-  // Neighborhoods table (larger containing areas)
+  // Legacy neighborhoods table (deprecated; retained for backward compatibility)
   `CREATE TABLE IF NOT EXISTS neighborhoods (
     id UUID PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
@@ -120,17 +120,20 @@ const migrations = [
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   );`,
 
-  // Zones table with polygon coordinates and neighborhood reference
+  // Zones table with polygon coordinates
   `CREATE TABLE IF NOT EXISTS zones (
     id UUID PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     description TEXT,
     neighborhood_id UUID REFERENCES neighborhoods(id) ON DELETE SET NULL,
+    neighborhood_name VARCHAR(255),
     boundary_coords JSONB NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   );`,
+  `ALTER TABLE zones ADD COLUMN IF NOT EXISTS neighborhood_name VARCHAR(255);`,
 
   `CREATE INDEX IF NOT EXISTS idx_zones_neighborhood ON zones(neighborhood_id);`,
+  `CREATE INDEX IF NOT EXISTS idx_zones_neighborhood_name ON zones(neighborhood_name);`,
 
   // Zone progress table (simplified - captured when any business visited)
   `CREATE TABLE IF NOT EXISTS zone_progress (
@@ -141,15 +144,25 @@ const migrations = [
     PRIMARY KEY(user_id, zone_id)
   );`,
 
-  // Neighborhood progress table
+  // Neighborhood progress table (by Mapbox neighborhood name)
+  `DO $$
+   BEGIN
+     IF EXISTS (
+       SELECT 1
+       FROM information_schema.columns
+       WHERE table_name = 'neighborhood_progress' AND column_name = 'neighborhood_id'
+     ) THEN
+       DROP TABLE neighborhood_progress;
+     END IF;
+   END $$;`,
   `CREATE TABLE IF NOT EXISTS neighborhood_progress (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    neighborhood_id UUID NOT NULL REFERENCES neighborhoods(id) ON DELETE CASCADE,
+    neighborhood_name VARCHAR(255) NOT NULL,
     zones_captured INTEGER DEFAULT 0,
     total_zones INTEGER DEFAULT 0,
     fully_captured BOOLEAN DEFAULT FALSE,
     captured_at TIMESTAMP WITH TIME ZONE,
-    PRIMARY KEY(user_id, neighborhood_id)
+    PRIMARY KEY(user_id, neighborhood_name)
   );`,
 
   // Badges table

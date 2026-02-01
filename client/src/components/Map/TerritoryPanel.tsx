@@ -1,20 +1,32 @@
-import type { Zone, Neighborhood } from '../../types';
+import type { Zone } from '../../types';
 
 interface TerritoryPanelProps {
   zones: Zone[];
-  neighborhoods: Neighborhood[];
 }
 
-export default function TerritoryPanel({ zones, neighborhoods }: TerritoryPanelProps) {
-  // Group zones by neighborhood
+const NEIGHBORHOOD_BONUS_POINTS = 50;
+
+export default function TerritoryPanel({ zones }: TerritoryPanelProps) {
   const zonesByNeighborhood = new Map<string, Zone[]>();
   zones.forEach(zone => {
-    if (zone.neighborhoodName) {
-      const existing = zonesByNeighborhood.get(zone.neighborhoodName) || [];
-      existing.push(zone);
-      zonesByNeighborhood.set(zone.neighborhoodName, existing);
-    }
+    const name = zone.neighborhoodName || 'Unassigned';
+    const existing = zonesByNeighborhood.get(name) || [];
+    existing.push(zone);
+    zonesByNeighborhood.set(name, existing);
   });
+  const neighborhoodEntries = Array.from(zonesByNeighborhood.entries()).map(([name, group]) => {
+    const total = group.length;
+    const captured = group.filter(z => z.captured).length;
+    const percentCaptured = total > 0 ? Math.round((captured / total) * 100) : 0;
+    return {
+      name,
+      zones: group,
+      total,
+      captured,
+      percentCaptured,
+      fullyCaptured: total > 0 && captured >= total,
+    };
+  }).sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <div className="absolute bottom-20 left-0 right-0 z-10">
@@ -25,12 +37,11 @@ export default function TerritoryPanel({ zones, neighborhoods }: TerritoryPanelP
           </h3>
 
           <div className="space-y-3">
-            {neighborhoods.map(neighborhood => {
-              const neighborhoodZones = zonesByNeighborhood.get(neighborhood.name) || [];
+            {neighborhoodEntries.map(neighborhood => {
 
               return (
                 <div
-                  key={neighborhood.id}
+                  key={neighborhood.name}
                   className={`
                     p-3 rounded-xl border transition-all
                     ${neighborhood.fullyCaptured
@@ -80,7 +91,7 @@ export default function TerritoryPanel({ zones, neighborhoods }: TerritoryPanelP
 
                   {/* Zone chips */}
                   <div className="flex flex-wrap gap-1.5">
-                    {neighborhoodZones.map(zone => (
+                    {neighborhood.zones.map(zone => (
                       <span
                         key={zone.id}
                         className={`
@@ -99,18 +110,18 @@ export default function TerritoryPanel({ zones, neighborhoods }: TerritoryPanelP
                   {/* Bonus points indicator */}
                   {neighborhood.fullyCaptured ? (
                     <div className="mt-2 text-xs text-green-400 flex items-center gap-1">
-                      <span>✨</span> +{neighborhood.bonusPoints} bonus points earned!
+                      <span>✨</span> +{NEIGHBORHOOD_BONUS_POINTS} bonus points earned!
                     </div>
                   ) : (
                     <div className="mt-2 text-xs text-gray-500">
-                      Capture all zones for +{neighborhood.bonusPoints} bonus points
+                      Capture all zones for +{NEIGHBORHOOD_BONUS_POINTS} bonus points
                     </div>
                   )}
                 </div>
               );
             })}
 
-            {neighborhoods.length === 0 && (
+            {neighborhoodEntries.length === 0 && (
               <div className="text-center text-gray-500 py-4">
                 No neighborhoods found in this area
               </div>

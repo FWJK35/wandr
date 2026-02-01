@@ -10,6 +10,7 @@ const CHECKIN_RADIUS_METERS = 50; // Must be within 50m to check in
 const CHECKIN_COOLDOWN_HOURS = 24; // 24 hour cooldown per business
 const ZONE_CAPTURE_POINTS = 25; // Points for capturing a zone
 const NEIGHBORHOOD_CAPTURE_POINTS = 50; // Bonus points for capturing entire neighborhood
+const MAPBOX_TOKEN = process.env.MAPBOX_TOKEN || process.env.VITE_MAPBOX_TOKEN;
 
 // Helper function to calculate distance in meters using Haversine formula
 function calculateDistanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -46,26 +47,69 @@ function parseBoundaryCoords(coords: any): [number, number][] {
   return coords;
 }
 
+const getPolygonCentroid = (coords: [number, number][]) => {
+  if (coords.length === 0) return null;
+  const first = coords[0];
+  const last = coords[coords.length - 1];
+  const unique = (coords.length > 1 && first[0] === last[0] && first[1] === last[1])
+    ? coords.slice(0, -1)
+    : coords;
+  if (unique.length === 0) return null;
+  const sum = unique.reduce(
+    (acc, [lng, lat]) => ({ lng: acc.lng + lng, lat: acc.lat + lat }),
+    { lng: 0, lat: 0 }
+  );
+  return { lng: sum.lng / unique.length, lat: sum.lat / unique.length };
+};
+
+async function reverseGeocodeNeighborhood(lng: number, lat: number): Promise<string | null> {
+  if (!MAPBOX_TOKEN) return null;
+  try {
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?types=neighborhood&limit=1&access_token=${MAPBOX_TOKEN}`;
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    const data = await response.json();
+    const feature = data?.features?.[0];
+    if (!feature) return null;
+    return feature.text || feature.place_name || null;
+  } catch (error) {
+    console.error('Mapbox reverse geocode error:', error);
+    return null;
+  }
+}
+
+async function hydrateZoneNeighborhoodName(zoneId: string, coords: [number, number][], currentName: string | null) {
+  if (currentName) return currentName;
+  const centroid = getPolygonCentroid(coords);
+  if (!centroid) return null;
+  const name = await reverseGeocodeNeighborhood(centroid.lng, centroid.lat);
+  if (name) {
+    await query('UPDATE zones SET neighborhood_name = $1 WHERE id = $2', [name, zoneId]);
+  }
+  return name;
+}
+
 async function findZoneForPoint(lat: number, lng: number): Promise<{
   id: string;
   name: string;
-  neighborhood_id: string | null;
+  neighborhood_name: string | null;
   coords: [number, number][];
 } | null> {
   const zones = await query<{
     id: string;
     name: string;
-    neighborhood_id: string | null;
+    neighborhood_name: string | null;
     boundary_coords: any;
-  }>('SELECT id, name, neighborhood_id, boundary_coords FROM zones');
+  }>('SELECT id, name, neighborhood_name, boundary_coords FROM zones');
 
   for (const zone of zones) {
     const coords = parseBoundaryCoords(zone.boundary_coords);
     if (pointInPolygon(lng, lat, coords)) {
+      const neighborhoodName = await hydrateZoneNeighborhoodName(zone.id, coords, zone.neighborhood_name);
       return {
         id: zone.id,
         name: zone.name,
-        neighborhood_id: zone.neighborhood_id,
+        neighborhood_name: neighborhoodName,
         coords,
       };
     }
@@ -228,7 +272,6 @@ checkinsRouter.post('/', authenticate, async (req: AuthRequest, res: Response) =
         neighborhoodName: zoneCapture.neighborhoodName
       } : null,
       neighborhoodCapture: zoneCapture.newNeighborhoodCaptured ? {
-        neighborhoodId: zoneCapture.neighborhoodId,
         neighborhoodName: zoneCapture.neighborhoodName
       } : null
     });
@@ -285,10 +328,10 @@ checkinsRouter.post('/undo', authenticate, async (req: AuthRequest, res: Respons
       );
       wasZoneCaptured = !!zoneProgress?.captured;
 
-      if (matchedZone.neighborhood_id) {
+      if (matchedZone.neighborhood_name) {
         const neighborhoodProgress = await queryOne<{ fully_captured: boolean }>(
-          'SELECT fully_captured FROM neighborhood_progress WHERE user_id = $1 AND neighborhood_id = $2',
-          [userId, matchedZone.neighborhood_id]
+          'SELECT fully_captured FROM neighborhood_progress WHERE user_id = $1 AND neighborhood_name = $2',
+          [userId, matchedZone.neighborhood_name]
         );
         wasNeighborhoodCaptured = !!neighborhoodProgress?.fully_captured;
       }
@@ -328,10 +371,10 @@ checkinsRouter.post('/undo', authenticate, async (req: AuthRequest, res: Respons
         );
       }
 
-      if (matchedZone.neighborhood_id) {
+      if (matchedZone.neighborhood_name) {
         const [totalResult] = await query<{ count: string }>(
-          'SELECT COUNT(*) as count FROM zones WHERE neighborhood_id = $1',
-          [matchedZone.neighborhood_id]
+          'SELECT COUNT(*) as count FROM zones WHERE neighborhood_name = $1',
+          [matchedZone.neighborhood_name]
         );
         const totalZones = parseInt(totalResult?.count || '0');
 
@@ -339,22 +382,22 @@ checkinsRouter.post('/undo', authenticate, async (req: AuthRequest, res: Respons
           `SELECT COUNT(*) as count
            FROM zone_progress zp
            JOIN zones z ON z.id = zp.zone_id
-           WHERE zp.user_id = $1 AND z.neighborhood_id = $2 AND zp.captured = true`,
-          [userId, matchedZone.neighborhood_id]
+           WHERE zp.user_id = $1 AND z.neighborhood_name = $2 AND zp.captured = true`,
+          [userId, matchedZone.neighborhood_name]
         );
         const capturedZones = parseInt(capturedResult?.count || '0');
 
         nowNeighborhoodCaptured = totalZones > 0 && capturedZones >= totalZones;
 
         await query(
-          `INSERT INTO neighborhood_progress (user_id, neighborhood_id, zones_captured, total_zones, fully_captured, captured_at)
+          `INSERT INTO neighborhood_progress (user_id, neighborhood_name, zones_captured, total_zones, fully_captured, captured_at)
            VALUES ($1, $2, $3, $4, $5, $6)
-           ON CONFLICT (user_id, neighborhood_id)
+           ON CONFLICT (user_id, neighborhood_name)
            DO UPDATE SET zones_captured = $3, total_zones = $4, fully_captured = $5,
                          captured_at = CASE WHEN $5 THEN COALESCE(neighborhood_progress.captured_at, NOW()) ELSE NULL END`,
           [
             userId,
-            matchedZone.neighborhood_id,
+            matchedZone.neighborhood_name,
             capturedZones,
             totalZones,
             nowNeighborhoodCaptured,
@@ -522,7 +565,6 @@ async function checkAndUpdateZoneCapture(userId: string, businessLat: number, bu
   newZoneCaptured: boolean;
   zoneId?: string;
   zoneName?: string;
-  neighborhoodId?: string;
   neighborhoodName?: string;
   newNeighborhoodCaptured: boolean;
 }> {
@@ -530,19 +572,21 @@ async function checkAndUpdateZoneCapture(userId: string, businessLat: number, bu
   const zones = await query<{
     id: string;
     name: string;
-    neighborhood_id: string | null;
+    neighborhood_name: string | null;
     boundary_coords: any;
   }>(
-    'SELECT id, name, neighborhood_id, boundary_coords FROM zones'
+    'SELECT id, name, neighborhood_name, boundary_coords FROM zones'
   );
 
   // Find which zone this business is in
-  let matchedZone: { id: string; name: string; neighborhood_id: string | null } | null = null;
+  let matchedZone: { id: string; name: string; neighborhood_name: string | null } | null = null;
+  let matchedCoords: [number, number][] | null = null;
 
   for (const zone of zones) {
     const coords = parseBoundaryCoords(zone.boundary_coords);
     if (pointInPolygon(businessLng, businessLat, coords)) {
       matchedZone = zone;
+      matchedCoords = coords;
       break;
     }
   }
@@ -574,18 +618,24 @@ async function checkAndUpdateZoneCapture(userId: string, businessLat: number, bu
   let newNeighborhoodCaptured = false;
 
   // Check if this completes a neighborhood
-  if (matchedZone.neighborhood_id) {
-    // Get neighborhood info
-    const neighborhood = await queryOne<{ id: string; name: string }>(
-      'SELECT id, name FROM neighborhoods WHERE id = $1',
-      [matchedZone.neighborhood_id]
-    );
-    neighborhoodName = neighborhood?.name;
+  if (matchedZone.neighborhood_name || matchedCoords) {
+    const hydratedName = matchedCoords
+      ? await hydrateZoneNeighborhoodName(matchedZone.id, matchedCoords, matchedZone.neighborhood_name)
+      : matchedZone.neighborhood_name;
+    if (!hydratedName) {
+      return {
+        newZoneCaptured: true,
+        zoneId: matchedZone.id,
+        zoneName: matchedZone.name,
+        newNeighborhoodCaptured
+      };
+    }
+    neighborhoodName = hydratedName;
 
     // Count total zones in neighborhood
     const [totalResult] = await query<{ count: string }>(
-      'SELECT COUNT(*) as count FROM zones WHERE neighborhood_id = $1',
-      [matchedZone.neighborhood_id]
+      'SELECT COUNT(*) as count FROM zones WHERE neighborhood_name = $1',
+      [hydratedName]
     );
     const totalZones = parseInt(totalResult?.count || '0');
 
@@ -594,27 +644,27 @@ async function checkAndUpdateZoneCapture(userId: string, businessLat: number, bu
       `SELECT COUNT(*) as count
        FROM zone_progress zp
        JOIN zones z ON z.id = zp.zone_id
-       WHERE zp.user_id = $1 AND z.neighborhood_id = $2 AND zp.captured = true`,
-      [userId, matchedZone.neighborhood_id]
+       WHERE zp.user_id = $1 AND z.neighborhood_name = $2 AND zp.captured = true`,
+      [userId, hydratedName]
     );
     const capturedZones = parseInt(capturedResult?.count || '0');
 
     // Update neighborhood progress
     const alreadyFullyCaptured = await queryOne<{ fully_captured: boolean }>(
-      'SELECT fully_captured FROM neighborhood_progress WHERE user_id = $1 AND neighborhood_id = $2',
-      [userId, matchedZone.neighborhood_id]
+      'SELECT fully_captured FROM neighborhood_progress WHERE user_id = $1 AND neighborhood_name = $2',
+      [userId, hydratedName]
     );
 
     const isNowFullyCaptured = capturedZones >= totalZones && totalZones > 0;
     newNeighborhoodCaptured = isNowFullyCaptured && !alreadyFullyCaptured?.fully_captured;
 
     await query(
-      `INSERT INTO neighborhood_progress (user_id, neighborhood_id, zones_captured, total_zones, fully_captured, captured_at)
+      `INSERT INTO neighborhood_progress (user_id, neighborhood_name, zones_captured, total_zones, fully_captured, captured_at)
        VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (user_id, neighborhood_id)
+       ON CONFLICT (user_id, neighborhood_name)
        DO UPDATE SET zones_captured = $3, total_zones = $4, fully_captured = $5,
                      captured_at = CASE WHEN $5 AND NOT neighborhood_progress.fully_captured THEN NOW() ELSE neighborhood_progress.captured_at END`,
-      [userId, matchedZone.neighborhood_id, capturedZones, totalZones, isNowFullyCaptured, isNowFullyCaptured ? new Date() : null]
+      [userId, hydratedName, capturedZones, totalZones, isNowFullyCaptured, isNowFullyCaptured ? new Date() : null]
     );
   }
 
@@ -622,7 +672,6 @@ async function checkAndUpdateZoneCapture(userId: string, businessLat: number, bu
     newZoneCaptured: true,
     zoneId: matchedZone.id,
     zoneName: matchedZone.name,
-    neighborhoodId: matchedZone.neighborhood_id || undefined,
     neighborhoodName,
     newNeighborhoodCaptured
   };

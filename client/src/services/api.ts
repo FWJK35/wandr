@@ -4,7 +4,6 @@ import type {
   Business,
   CheckIn,
   Zone,
-  Neighborhood,
   Quest,
   Badge,
   FeedItem,
@@ -151,6 +150,14 @@ export const checkinsApi = {
       businessName: string;
       points: PointsBreakdown;
       isFirstVisit: boolean;
+      zoneCapture?: {
+        zoneId: string;
+        zoneName: string;
+        neighborhoodName?: string;
+      };
+      neighborhoodCapture?: {
+        neighborhoodName: string;
+      };
       zoneProgress?: {
         zoneId: string;
         zoneName: string;
@@ -204,43 +211,23 @@ export const zonesApi = {
     return res.data;
   },
 
-  getNeighborhoods: async () => {
-    const res = await api.get<Neighborhood[]>('/zones/neighborhoods');
-    return res.data;
-  },
-
   getLeaderboard: async () => {
     const res = await api.get<LeaderboardEntry[]>('/zones/stats/leaderboard');
     return res.data;
   },
 
   updateBoundary: async (id: string, coordinates: [number, number][]) => {
-    const res = await api.patch<{ id: string }>(`/zones/${id}/boundary`, { coordinates });
+    const res = await api.patch<{ id: string; neighborhoodName?: string | null }>(`/zones/${id}/boundary`, { coordinates });
     return res.data;
   },
 
-  updateNeighborhoodBoundary: async (id: string, coordinates: [number, number][]) => {
-    const res = await api.patch<{ id: string }>(`/zones/neighborhoods/${id}/boundary`, { coordinates });
-    return res.data;
-  },
-
-  updateZoneMeta: async (id: string, data: { name?: string; description?: string; neighborhoodId?: string | null }) => {
+  updateZoneMeta: async (id: string, data: { name?: string; description?: string }) => {
     const res = await api.patch<{ id: string }>(`/zones/${id}`, data);
     return res.data;
   },
 
-  updateNeighborhoodMeta: async (id: string, data: { name?: string; description?: string; bonusPoints?: number }) => {
-    const res = await api.patch<{ id: string }>(`/zones/neighborhoods/${id}`, data);
-    return res.data;
-  },
-
-  createZone: async (data: { name: string; description?: string; neighborhoodId?: string | null; coordinates: [number, number][] }) => {
-    const res = await api.post<{ id: string }>(`/zones`, data);
-    return res.data;
-  },
-
-  createNeighborhood: async (data: { name: string; description?: string; bonusPoints?: number; coordinates: [number, number][] }) => {
-    const res = await api.post<{ id: string }>(`/zones/neighborhoods`, data);
+  createZone: async (data: { name: string; description?: string; coordinates: [number, number][] }) => {
+    const res = await api.post<{ id: string; neighborhoodName?: string | null }>(`/zones`, data);
     return res.data;
   },
 
@@ -249,10 +236,6 @@ export const zonesApi = {
     return res.data;
   },
 
-  deleteNeighborhood: async (id: string) => {
-    const res = await api.delete<{ id: string }>(`/zones/neighborhoods/${id}`);
-    return res.data;
-  },
 };
 
 // Quests API

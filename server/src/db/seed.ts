@@ -50,44 +50,6 @@ const sampleBusinesses = [
   { name: 'India Point Park', category: 'Park', address: '100 India St, Providence, RI', lat: 41.8185, lng: -71.3920 }
 ];
 
-// Neighborhoods - larger containing areas
-const sampleNeighborhoods = [
-  {
-    name: 'College Hill',
-    description: 'The historic College Hill neighborhood, home to Brown University and RISD',
-    // Larger polygon encompassing the whole area
-    coordinates: [
-      [-71.4120, 41.8180],
-      [-71.3940, 41.8180],
-      [-71.3940, 41.8320],
-      [-71.4120, 41.8320],
-      [-71.4120, 41.8180]
-    ]
-  },
-  {
-    name: 'Downtown Providence',
-    description: 'The heart of Providence with shopping, dining, and entertainment',
-    coordinates: [
-      [-71.4180, 41.8200],
-      [-71.4050, 41.8200],
-      [-71.4050, 41.8300],
-      [-71.4180, 41.8300],
-      [-71.4180, 41.8200]
-    ]
-  },
-  {
-    name: 'Fox Point',
-    description: 'Historic waterfront neighborhood with diverse dining options',
-    coordinates: [
-      [-71.4020, 41.8140],
-      [-71.3880, 41.8140],
-      [-71.3880, 41.8220],
-      [-71.4020, 41.8220],
-      [-71.4020, 41.8140]
-    ]
-  }
-];
-
 // Zones - smaller areas within neighborhoods (irregular shapes)
 const sampleZones = [
   // College Hill zones
@@ -335,33 +297,17 @@ async function seed() {
     }
     console.log(`✅ Created ${sampleBusinesses.length} businesses`);
 
-    // Create neighborhoods
-    console.log('Creating neighborhoods...');
-    const neighborhoodIds: Map<string, string> = new Map();
-    for (const hood of sampleNeighborhoods) {
-      const id = uuidv4();
-      neighborhoodIds.set(hood.name, id);
-      await client.query(
-        `INSERT INTO neighborhoods (id, name, description, boundary_coords, created_at)
-         VALUES ($1, $2, $3, $4, NOW())
-         ON CONFLICT DO NOTHING`,
-        [id, hood.name, hood.description, JSON.stringify(hood.coordinates)]
-      );
-    }
-    console.log(`✅ Created ${sampleNeighborhoods.length} neighborhoods`);
-
     // Create zones
     console.log('Creating zones...');
     const zoneIds: string[] = [];
     for (const zone of sampleZones) {
       const id = uuidv4();
       zoneIds.push(id);
-      const neighborhoodId = neighborhoodIds.get(zone.neighborhood) || null;
       await client.query(
-        `INSERT INTO zones (id, name, description, neighborhood_id, boundary_coords, created_at)
+        `INSERT INTO zones (id, name, description, neighborhood_name, boundary_coords, created_at)
          VALUES ($1, $2, $3, $4, $5, NOW())
          ON CONFLICT DO NOTHING`,
-        [id, zone.name, zone.description, neighborhoodId, JSON.stringify(zone.coordinates)]
+        [id, zone.name, zone.description, zone.neighborhood || null, JSON.stringify(zone.coordinates)]
       );
     }
     console.log(`✅ Created ${sampleZones.length} zones`);

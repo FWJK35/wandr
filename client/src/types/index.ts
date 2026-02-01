@@ -47,22 +47,9 @@ export interface Zone {
   id: string;
   name: string;
   description?: string;
-  neighborhoodId?: string;
-  neighborhoodName?: string;
+  neighborhoodName?: string | null;
   boundary: GeoJSONPolygon;
   captured: boolean;
-}
-
-export interface Neighborhood {
-  id: string;
-  name: string;
-  description?: string;
-  boundary: GeoJSONPolygon;
-  bonusPoints: number;
-  totalZones: number;
-  capturedZones: number;
-  percentCaptured: number;
-  fullyCaptured: boolean;
 }
 
 export interface Quest {
