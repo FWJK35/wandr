@@ -220,22 +220,12 @@ export default function BusinessPanel({ business, userLocation, onCheckInComplet
             </div>
           ) : details && (
             <>
-              {/* Stats */}
-              <div className="flex gap-4 mb-4 text-sm">
-                <div>
-                  <span className="text-gray-400">Visitors:</span>
-                  <span className="ml-1 text-white">{details.stats?.uniqueVisitors || 0}</span>
+              {/* Visited indicator only */}
+              {details.visited && (
+                <div className="mb-4 text-sm text-primary-400">
+                  ✓ Visited
                 </div>
-                <div>
-                  <span className="text-gray-400">Check-ins:</span>
-                  <span className="ml-1 text-white">{details.stats?.totalCheckins || 0}</span>
-                </div>
-                {details.visited && (
-                  <div className="text-primary-400">
-                    <span>✓ Visited</span>
-                  </div>
-                )}
-              </div>
+              )}
 
               {/* Active promotions */}
               {details.promotions?.length > 0 && (

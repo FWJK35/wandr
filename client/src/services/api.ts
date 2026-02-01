@@ -246,7 +246,7 @@ export const questsApi = {
   },
 
   getActive: async () => {
-    const res = await api.get<Quest[]>('/quests/active');
+    const res = await api.get<Quest[]>('/quests/user-active');
     return res.data;
   },
 
@@ -267,6 +267,27 @@ export const questsApi = {
       pointsEarned?: number;
       badgeEarned?: string;
     }>(`/quests/${userQuestId}/check`);
+    return res.data;
+  },
+
+  generate: async (data: { userLat: number; userLng: number; weatherTag?: string; windowMinutes?: number }) => {
+    const res = await api.post(`/quests/generate`, data);
+    return res.data;
+  },
+
+  getGeneratedActive: async () => {
+    const res = await api.get<{
+      quest_id: string;
+      business_id: string;
+      type: string;
+      title: string;
+      short_prompt: string;
+      points: number;
+      suggested_percent_off?: number | null;
+      safety_note?: string | null;
+      starts_at: string;
+      ends_at: string;
+    }[]>(`/quests/active`);
     return res.data;
   },
 };

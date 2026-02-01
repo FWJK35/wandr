@@ -79,6 +79,20 @@ export interface QuestProgress {
   zonesCaptured?: number;
 }
 
+export interface GeneratedQuest {
+  quest_id: string;
+  business_id: string;
+  type: 'CHECK_IN' | 'PHOTO' | 'ROUTE';
+  title: string;
+  short_prompt: string;
+  steps: { text: string }[];
+  points: number;
+  suggested_percent_off?: number | null;
+  safety_note?: string | null;
+  starts_at: string;
+  ends_at: string;
+}
+
 export interface Badge {
   id: string;
   name: string;

@@ -3,13 +3,12 @@ import MapGL, { NavigationControl, GeolocateControl, Source, Layer } from 'react
 import type { MapRef, FillLayer, LineLayer } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { useLocation } from '../../hooks/useLocation';
-import { businessesApi, zonesApi } from '../../services/api';
-import type { Business, Zone } from '../../types';
+import { businessesApi, zonesApi, questsApi } from '../../services/api';
+import type { Business, Zone, GeneratedQuest } from '../../types';
 import BusinessMarker from './BusinessMarker';
 import UserMarker from './UserMarker';
 import ZoneOverlay from './ZoneOverlay';
 import BusinessPanel from './BusinessPanel';
-import TerritoryPanel from './TerritoryPanel';
 import LoadingSpinner from '../shared/LoadingSpinner';
 
 const MAPBOX_TOKEN = (import.meta as any).env?.VITE_MAPBOX_TOKEN || '';
@@ -61,6 +60,27 @@ export default function GameMap() {
   const [neighborhoodGeojson, setNeighborhoodGeojson] = useState<{ type: 'FeatureCollection'; features: any[] } | null>(null);
   const [neighborhoodsLoading, setNeighborhoodsLoading] = useState(false);
   const [neighborhoodsError, setNeighborhoodsError] = useState<string | null>(null);
+  const [questBusinessIds, setQuestBusinessIds] = useState<Set<string>>(new Set());
+
+  const neighborhoodSummary = useMemo(() => {
+    const zonesByNeighborhood = new Map<string, Zone[]>();
+    zones.forEach(zone => {
+      const name = zone.neighborhoodName || 'Unassigned';
+      const arr = zonesByNeighborhood.get(name) || [];
+      arr.push(zone);
+      zonesByNeighborhood.set(name, arr);
+    });
+    const neighborhoods = Array.from(zonesByNeighborhood.entries()).map(([name, list]) => {
+      const total = list.length;
+      const captured = list.filter(z => z.captured).length;
+      const percentCaptured = total > 0 ? Math.round((captured / total) * 100) : 0;
+      return { name, total, captured, percentCaptured, zones: list, fullyCaptured: total > 0 && captured >= total };
+    }).sort((a, b) => a.name.localeCompare(b.name));
+    const totalZones = zones.length;
+    const capturedZones = zones.filter(z => z.captured).length;
+    const capturedNeighborhoods = neighborhoods.filter(n => n.fullyCaptured).length;
+    return { neighborhoods, totalZones, capturedZones, capturedNeighborhoods, totalNeighborhoods: neighborhoods.length };
+  }, [zones]);
 
   const neighborhoodFillLayer: FillLayer = {
     id: 'neighborhood-fill',
@@ -235,6 +255,23 @@ export default function GameMap() {
     }
   }, [location, fetchData]);
 
+  // Fetch active generated quests to highlight businesses
+  const fetchQuestHighlights = useCallback(async () => {
+    try {
+      const quests = await questsApi.getGeneratedActive();
+      const ids = new Set<string>(quests.map((q: GeneratedQuest) => q.business_id));
+      setQuestBusinessIds(ids);
+    } catch (err) {
+      console.warn('Failed to fetch generated quests for highlights', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchQuestHighlights();
+    const interval = setInterval(fetchQuestHighlights, 60_000);
+    return () => clearInterval(interval);
+  }, [fetchQuestHighlights]);
+
   useEffect(() => {
     if (mapLoaded && location) {
       fetchData(location.latitude, location.longitude, true);
@@ -404,6 +441,7 @@ export default function GameMap() {
           <BusinessMarker
             key={business.id}
             business={business}
+            highlight={questBusinessIds.has(business.id)}
             onClick={() => handleMarkerClick(business)}
           />
         ))}
@@ -486,46 +524,73 @@ export default function GameMap() {
         )}
       </div>
 
-      {/* Stats bar + controls hint */}
-      <div className="absolute top-4 left-44 right-16 flex justify-between items-start pointer-events-none">
-        <div className="glass rounded-xl px-4 py-2 pointer-events-auto">
-          <div className="flex items-center gap-4 text-sm">
-            <div>
-              <span className="text-gray-400">Nearby:</span>
-              <span className="ml-1 text-white font-semibold">{businesses.length}</span>
+      {/* Territory stats dropdown (top right) with full detail */}
+      <div className="absolute top-4 right-4 z-10 pointer-events-auto">
+        <details className="glass rounded-xl px-3 py-2 text-sm text-white shadow-lg max-w-sm">
+          <summary className="cursor-pointer select-none">
+            Territory stats
+          </summary>
+          <div className="mt-2 space-y-2 text-xs text-gray-200 max-h-72 overflow-auto pr-1">
+            <div className="flex justify-between">
+              <span className="text-gray-400">Zones captured</span>
+              <span className="font-semibold">{neighborhoodSummary.capturedZones}/{neighborhoodSummary.totalZones}</span>
             </div>
-            <div>
-              <span className="text-gray-400">Zones:</span>
-              <span className="ml-1 text-white font-semibold">
-                {zones.filter(z => z.captured).length}/{zones.length}
+            <div className="flex justify-between">
+              <span className="text-gray-400">Neighborhoods</span>
+              <span className="font-semibold">
+                {neighborhoodSummary.capturedNeighborhoods}/{neighborhoodSummary.totalNeighborhoods}
               </span>
             </div>
-            <div>
-              <span className="text-gray-400">Neighborhoods:</span>
-              <span className="ml-1 text-white font-semibold">
-                {(() => {
-                  const groups = new Map<string, { total: number; captured: number }>();
-                  zones.forEach(zone => {
-                    const name = zone.neighborhoodName || 'Unassigned';
-                    const entry = groups.get(name) || { total: 0, captured: 0 };
-                    entry.total += 1;
-                    if (zone.captured) entry.captured += 1;
-                    groups.set(name, entry);
-                  });
-                  const totals = Array.from(groups.values());
-                  const fullyCaptured = totals.filter(g => g.total > 0 && g.captured >= g.total).length;
-                  return `${fullyCaptured}/${totals.length}`;
-                })()}
-              </span>
+            {loading && (
+              <div className="flex items-center gap-2 text-gray-400">
+                <LoadingSpinner size="sm" />
+                <span>Updating…</span>
+              </div>
+            )}
+            <div className="border-t border-white/10 pt-2 space-y-2">
+              {neighborhoodSummary.neighborhoods.map((hood) => (
+                <div
+                  key={hood.name}
+                  className={`p-2 rounded-lg border
+                    ${hood.fullyCaptured ? 'bg-green-500/15 border-green-500/30' :
+                      hood.percentCaptured > 0 ? 'bg-amber-500/10 border-amber-500/30' :
+                        'bg-gray-700/30 border-gray-600/40'}`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">{hood.fullyCaptured ? '🏆' : hood.percentCaptured > 0 ? '🔓' : '🔒'}</span>
+                      <span className="font-medium text-white">{hood.name}</span>
+                    </div>
+                    <span className={`text-xs font-semibold ${hood.fullyCaptured ? 'text-green-400' : 'text-amber-300'}`}>
+                      {hood.percentCaptured}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-700/50 rounded-full h-2 mb-2">
+                    <div
+                      className={`${hood.fullyCaptured ? 'bg-green-400' : 'bg-amber-400'} h-2 rounded-full`}
+                      style={{ width: `${hood.percentCaptured}%` }}
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {hood.zones.map(z => (
+                      <span
+                        key={z.id}
+                        className={`px-2 py-0.5 rounded-full text-[11px] ${
+                          z.captured ? 'bg-green-500/30 text-green-200' : 'bg-gray-600/40 text-gray-300'
+                        }`}
+                      >
+                        {z.captured ? '✓ ' : ''}{z.name.replace(`${hood.name} - `, '')}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {neighborhoodSummary.neighborhoods.length === 0 && (
+                <div className="text-gray-400 text-center py-2">No neighborhoods in view</div>
+              )}
             </div>
           </div>
-        </div>
-
-        {loading && (
-          <div className="glass rounded-xl px-3 py-2 pointer-events-auto">
-            <LoadingSpinner size="sm" />
-          </div>
-        )}
+        </details>
       </div>
 
       {/* Camera control hint */}
@@ -561,10 +626,7 @@ export default function GameMap() {
         />
       )}
 
-      {/* Territory panel (when no business selected) */}
-      {!selectedBusiness && (
-        <TerritoryPanel zones={zones} />
-      )}
+      {/* Territory panel removed (was bottom progress bar) */}
       {neighborhoodsError && (
         <div className="absolute top-24 left-4 right-4">
           <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 text-sm text-amber-200">
