@@ -35,6 +35,7 @@ export interface Landmark {
   latitude: number;
   longitude: number;
   is_landmark?: boolean;
+  visited?: boolean;
 }
 
 export interface CheckIn {

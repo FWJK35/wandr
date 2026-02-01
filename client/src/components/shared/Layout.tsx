@@ -7,7 +7,6 @@ const navItems = [
   { path: '/quests', icon: 'target', label: 'Quests' },
   { path: '/feed', icon: 'feed', label: 'Feed' },
   { path: '/profile', icon: 'user', label: 'Profile' },
-  { path: '/tools/geometry', icon: 'edit', label: 'Edit' },
 ];
 
 function NavIcon({ name, active }: { name: string; active: boolean }) {

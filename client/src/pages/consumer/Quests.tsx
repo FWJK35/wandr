@@ -13,6 +13,7 @@ export default function Quests() {
   const [available, setAvailable] = useState<Quest[]>([]);
   const [generated, setGenerated] = useState<GeneratedQuest[]>([]);
   const [claimedGenerated, setClaimedGenerated] = useState<GeneratedQuest[]>([]);
+  const [completedGenerated, setCompletedGenerated] = useState<GeneratedQuest[]>([]);
   const [active, setActive] = useState<Quest[]>([]);
   const [completed, setCompleted] = useState<Quest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,6 +88,7 @@ export default function Quests() {
       const remainingAvailable = generatedData.filter(
         g => !g.quest_id || (!claimedIds.has(g.quest_id) && !completedIds.has(g.quest_id))
       );
+      const completedGen = generatedData.filter(g => g.quest_id && completedIds.has(g.quest_id));
       const uniqActiveMap = new Map<string, GeneratedQuest>();
       stillActive.forEach(g => {
         if (g.quest_id && !uniqActiveMap.has(g.quest_id)) uniqActiveMap.set(g.quest_id, g);
@@ -94,6 +96,7 @@ export default function Quests() {
       const uniqActive = Array.from(uniqActiveMap.values());
       setGenerated(remainingAvailable);
       setClaimedGenerated(uniqActive);
+      setCompletedGenerated(completedGen);
       // prune ids that are no longer returned (expired)
       const newIds = new Set<string>(uniqActive.map(g => g.quest_id));
       persistClaimedIds(newIds);
@@ -212,11 +215,18 @@ function handleClaimGenerated(gq: GeneratedQuest) {
       }),
     [active, claimedIdsSet]
   );
+  const completedGeneratedFiltered = useMemo(
+    () => {
+      const ids = loadCompletedIds();
+      return completedGenerated.filter((q) => ids.has(q.quest_id));
+    },
+    [completedGenerated]
+  );
 
   const tabs: { key: Tab; label: string; count: number }[] = [
     { key: 'available', label: 'Available', count: available.length + generated.length },
     { key: 'active', label: 'Active', count: activeFiltered.length + claimedUnique.length },
-    { key: 'completed', label: 'Completed', count: completed.length },
+    { key: 'completed', label: 'Completed', count: completed.length + completedGeneratedFiltered.length },
   ];
 
   return (
@@ -308,12 +318,6 @@ function handleClaimGenerated(gq: GeneratedQuest) {
                       <CardHeader
                         title={gq.title}
                         subtitle={undefined}
-                        action={
-                          <div className="flex items-center gap-2 text-sm">
-                            <span className="text-primary-400 font-semibold">+{gq.points}</span>
-                            <span className="text-gray-500">pts</span>
-                          </div>
-                        }
                       />
                       <p className="text-sm text-gray-300 mb-2">{gq.short_prompt}</p>
                       <div className="text-xs text-gray-400 mb-2">
@@ -350,12 +354,24 @@ function handleClaimGenerated(gq: GeneratedQuest) {
 
           {tab === 'completed' && (
             <>
-              {completed.length === 0 ? (
+              {completed.length === 0 && completedGeneratedFiltered.length === 0 ? (
                 <p className="text-center text-gray-400 py-8">No completed quests yet</p>
               ) : (
-                completed.map((quest) => (
-                  <QuestCard key={quest.id} quest={quest} completed />
-                ))
+                <>
+                  {completedGeneratedFiltered.map((gq) => (
+                    <Card key={gq.quest_id}>
+                      <CardHeader
+                        title={gq.title}
+                        subtitle={undefined}
+                      />
+                      <p className="text-sm text-gray-300 mb-2">{gq.short_prompt}</p>
+                      <div className="text-xs text-gray-400 mb-2">Completed</div>
+                    </Card>
+                  ))}
+                  {completed.map((quest) => (
+                    <QuestCard key={quest.id} quest={quest} completed hidePoints />
+                  ))}
+                </>
               )}
             </>
           )}
@@ -400,7 +416,7 @@ function QuestCard({ quest, onStart, loading, showProgress, completed }: QuestCa
         title={quest.title}
         subtitle={quest.questType}
         icon="🎯"
-                        action={null}
+        action={null}
       />
 
       <p className="text-sm text-gray-400 mb-4">{quest.description}</p>

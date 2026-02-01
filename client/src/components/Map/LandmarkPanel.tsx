@@ -62,6 +62,7 @@ export default function LandmarkPanel({ landmark, userLocation, onClose }: Landm
           localStorage.setItem('completed_generated_quests', JSON.stringify(Array.from(completedNext)));
           window.dispatchEvent(new CustomEvent('wandr:quest-claim'));
           window.dispatchEvent(new CustomEvent('wandr:quests-refresh'));
+          window.dispatchEvent(new CustomEvent('wandr:checkin-complete', { detail: { businessId: landmark.id } }));
         } catch (storageErr) {
           console.warn('Failed to persist claimed quest id', storageErr);
         }

@@ -8,6 +8,7 @@ interface LandmarkMarkerProps {
 }
 
 export default function LandmarkMarker({ landmark, onClick, highlight }: LandmarkMarkerProps) {
+  const visited = landmark.visited;
   return (
     <Marker
       longitude={landmark.longitude}
@@ -28,7 +29,7 @@ export default function LandmarkMarker({ landmark, onClick, highlight }: Landmar
           className={`
             w-10 h-10 rounded-full flex items-center justify-center
             border-2 shadow-lg
-            bg-amber-500/30 border-amber-400/60
+            ${visited ? 'bg-primary-500 border-primary-400' : 'bg-dark-100 border-white/20'}
             ${highlight ? 'ring-2 ring-amber-300 ring-offset-2 ring-offset-black/40' : ''}
           `}
         >

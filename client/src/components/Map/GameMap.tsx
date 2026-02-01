@@ -264,6 +264,7 @@ export default function GameMap() {
     }
   }, [location, fetchData]);
 
+
   // Fetch active generated quests to highlight businesses
   const fetchQuestHighlights = useCallback(async () => {
     try {

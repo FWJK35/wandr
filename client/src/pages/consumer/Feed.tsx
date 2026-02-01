@@ -3,6 +3,7 @@ import { socialApi } from '../../services/api';
 import type { FeedItem } from '../../types';
 import Card from '../../components/shared/Card';
 import LoadingSpinner from '../../components/shared/LoadingSpinner';
+import { useAuth } from '../../context/AuthContext';
 const genId = () => Math.random().toString(36).slice(2, 10);
 
 type FeedType = 'all' | 'friends' | 'following';
@@ -11,21 +12,31 @@ export default function Feed() {
   const [feedType, setFeedType] = useState<FeedType>('all');
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
 
   const fetchFeed = useCallback(async () => {
     setLoading(true);
     try {
       const data = await socialApi.getFeed(feedType);
       const live = data ?? [];
-      const combined = [...live, ...generateMockFeed(feedType)];
-      setItems(combined);
+      const mock = generateMockFeed(feedType);
+      const mockFiltered = user
+        ? mock.filter((item) => item.user.username !== user.username && item.user.id !== user.id)
+        : mock;
+      const combined = [...live, ...mockFiltered];
+      const filtered = combined;
+      setItems(filtered);
     } catch (err) {
       console.error('Failed to fetch feed:', err);
-      setItems(generateMockFeed(feedType));
+      const fallback = generateMockFeed(feedType);
+      const mockFiltered = user
+        ? fallback.filter((item) => item.user.username !== user.username && item.user.id !== user.id)
+        : fallback;
+      setItems(mockFiltered);
     } finally {
       setLoading(false);
     }
-  }, [feedType]);
+  }, [feedType, user]);
 
   useEffect(() => {
     fetchFeed();
