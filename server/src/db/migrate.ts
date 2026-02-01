@@ -265,6 +265,34 @@ const migrations = [
   `CREATE INDEX IF NOT EXISTS idx_promotions_business ON promotions(business_id);`,
   `CREATE INDEX IF NOT EXISTS idx_promotions_time ON promotions(start_time, end_time);`,
 
+  // Enrich businesses with metadata fields (idempotent)
+  `ALTER TABLE businesses
+     ADD COLUMN IF NOT EXISTS price_level SMALLINT CHECK (price_level BETWEEN 1 AND 5),
+     ADD COLUMN IF NOT EXISTS safety_rating SMALLINT CHECK (safety_rating BETWEEN 0 AND 100),
+     ADD COLUMN IF NOT EXISTS min_percent_off SMALLINT,
+     ADD COLUMN IF NOT EXISTS max_percent_off SMALLINT,
+     ADD COLUMN IF NOT EXISTS tags TEXT[],
+     ADD COLUMN IF NOT EXISTS features_json JSONB,
+     ADD COLUMN IF NOT EXISTS hours_json JSONB,
+     ADD COLUMN IF NOT EXISTS busy_7x24_json JSONB;`,
+
+  // Generated quests table for decision engine
+  `CREATE TABLE IF NOT EXISTS generated_quests (
+     quest_id TEXT PRIMARY KEY,
+     business_id TEXT NOT NULL,
+     type VARCHAR(20) NOT NULL,
+     title VARCHAR(255) NOT NULL,
+     short_prompt TEXT NOT NULL,
+     steps_json JSONB NOT NULL,
+     points INTEGER NOT NULL,
+     starts_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+     ends_at TIMESTAMPTZ NOT NULL,
+     suggested_percent_off INTEGER,
+     safety_note TEXT,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+   );`,
+  `CREATE INDEX IF NOT EXISTS idx_generated_quests_window ON generated_quests(starts_at, ends_at);`,
+
   // Rewards table
   `CREATE TABLE IF NOT EXISTS rewards (
     id UUID PRIMARY KEY,

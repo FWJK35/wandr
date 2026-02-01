@@ -1,7 +1,9 @@
 import { Router, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { query, queryOne } from '../db/index.js';
+import { query, queryOne, execute } from '../db/index.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
+import { buildCandidates, CandidateContext, fetchBusinesses, generateQuestsWithGemini } from '../quests/decisionEngine.js';
+import { addMinutes } from '../utils/time.js';
 
 export const questsRouter = Router();
 
@@ -52,8 +54,8 @@ questsRouter.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   }
 });
 
-// GET /api/quests/active - Get user's active quests
-questsRouter.get('/active', authenticate, async (req: AuthRequest, res: Response) => {
+// GET /api/quests/user-active - Get user's active quests
+questsRouter.get('/user-active', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user!.id;
 
@@ -178,6 +180,96 @@ questsRouter.get('/completed', authenticate, async (req: AuthRequest, res: Respo
   } catch (error) {
     console.error('Get completed quests error:', error);
     res.status(500).json({ error: 'Failed to get completed quests' });
+  }
+});
+
+// POST /api/quests/generate - generate time-windowed quests via decision engine
+questsRouter.post('/generate', async (req, res) => {
+  try {
+    const { userLat, userLng, weatherTag, windowMinutes } = req.body || {};
+    if (typeof userLat !== 'number' || typeof userLng !== 'number') {
+      return res.status(400).json({ error: 'userLat and userLng are required numbers' });
+    }
+    const window = typeof windowMinutes === 'number' && windowMinutes > 0 ? windowMinutes : 120;
+
+    const businesses = await fetchBusinesses();
+    const ctx: CandidateContext = { userLat, userLng, weatherTag, windowMinutes: window };
+    const candidates = buildCandidates(businesses, ctx);
+
+    const generated = await generateQuestsWithGemini(candidates, ctx);
+
+    // persist generated quests
+    const now = new Date();
+    const endsAt = addMinutes(now, window);
+    for (const q of generated.quests) {
+      await execute(
+        `INSERT INTO generated_quests
+           (quest_id, business_id, type, title, short_prompt, steps_json, points, starts_at, ends_at, suggested_percent_off, safety_note)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         ON CONFLICT (quest_id) DO NOTHING`,
+        [
+          q.quest_id,
+          q.business_id,
+          q.type,
+          q.title,
+          q.short_prompt,
+          JSON.stringify(q.steps || []),
+          q.points,
+          now,
+          endsAt,
+          q.suggested_percent_off,
+          q.safety_note,
+        ]
+      );
+    }
+
+    return res.json(generated);
+  } catch (err: any) {
+    console.error('Generate quests error:', err);
+    return res.status(500).json({ error: 'Failed to generate quests' });
+  }
+});
+
+// GET /api/quests/active - active generated quests (time-windowed)
+questsRouter.get('/active', async (_req, res) => {
+  try {
+    const rows = await query<{
+      quest_id: string;
+      business_id: string;
+      type: string;
+      title: string;
+      short_prompt: string;
+      steps_json: any;
+      points: number;
+      suggested_percent_off: number | null;
+      safety_note: string | null;
+      starts_at: Date;
+      ends_at: Date;
+    }>(
+      `SELECT quest_id, business_id, type, title, short_prompt, steps_json, points,
+              suggested_percent_off, safety_note, starts_at, ends_at
+       FROM generated_quests
+       WHERE NOW() BETWEEN starts_at AND ends_at
+       ORDER BY starts_at DESC
+       LIMIT 100`
+    );
+
+    return res.json(rows.map(r => ({
+      quest_id: r.quest_id,
+      business_id: r.business_id,
+      type: r.type,
+      title: r.title,
+      short_prompt: r.short_prompt,
+      steps: Array.isArray(r.steps_json) ? r.steps_json : [],
+      points: r.points,
+      suggested_percent_off: r.suggested_percent_off,
+      safety_note: r.safety_note,
+      starts_at: r.starts_at,
+      ends_at: r.ends_at,
+    })));
+  } catch (err) {
+    console.error('Get active generated quests error:', err);
+    return res.status(500).json({ error: 'Failed to fetch active quests' });
   }
 });
 
