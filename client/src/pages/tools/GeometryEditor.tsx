@@ -9,6 +9,7 @@ import LoadingSpinner from '../../components/shared/LoadingSpinner';
 const MAPBOX_TOKEN = (import.meta as any).env?.VITE_MAPBOX_TOKEN || '';
 const LOAD_ALL_ZONES = true;
 const ALL_ZONE_BOUNDS = { minLat: -90, maxLat: 90, minLng: -180, maxLng: 180 };
+const NEIGHBORHOODS_URL = '/neighborhoods-providence.geojson';
 
 const defaultCenter = {
   lat: 41.8268,
@@ -174,6 +175,27 @@ export default function GeometryEditor() {
   const [editBusinessCategory, setEditBusinessCategory] = useState('Shop');
   const [editBusinessAddress, setEditBusinessAddress] = useState('');
   const [editZoneName, setEditZoneName] = useState('');
+  const [neighborhoodGeojson, setNeighborhoodGeojson] = useState<any | null>(null);
+  const [hoodsLoading, setHoodsLoading] = useState(false);
+  const [hoodsError, setHoodsError] = useState<string | null>(null);
+  const neighborhoodFillLayer: FillLayer = useMemo(() => ({
+    id: 'editor-hood-fill',
+    type: 'fill',
+    paint: {
+      'fill-color': '#10b981',
+      'fill-opacity': 0.08,
+    },
+  }), []);
+
+  const neighborhoodLineLayer: LineLayer = useMemo(() => ({
+    id: 'editor-hood-line',
+    type: 'line',
+    paint: {
+      'line-color': '#34d399',
+      'line-width': 1.5,
+      'line-opacity': 0.7,
+    },
+  }), []);
 
   useEffect(() => {
     if (location) {
@@ -188,6 +210,23 @@ export default function GeometryEditor() {
   useEffect(() => {
     viewStateRef.current = viewState;
   }, [viewState]);
+
+  useEffect(() => {
+    if (neighborhoodGeojson || hoodsLoading) return;
+    setHoodsLoading(true);
+    setHoodsError(null);
+    fetch(NEIGHBORHOODS_URL)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Failed to load neighborhoods: ${res.status}`);
+        return res.json();
+      })
+      .then(setNeighborhoodGeojson)
+      .catch((err) => {
+        console.error(err);
+        setHoodsError('Failed to load neighborhood outlines.');
+      })
+      .finally(() => setHoodsLoading(false));
+  }, [neighborhoodGeojson, hoodsLoading]);
 
   const loadData = useCallback(async () => {
     const map = mapRef.current?.getMap();
@@ -642,6 +681,14 @@ export default function GeometryEditor() {
         style={{ width: '100%', height: '100%' }}
       >
         <NavigationControl position="top-right" />
+
+        {/* Neighborhood outlines for context */}
+        {neighborhoodGeojson && (
+          <Source id="editor-neighborhoods" type="geojson" data={neighborhoodGeojson as any}>
+            <Layer {...neighborhoodFillLayer} />
+            <Layer {...neighborhoodLineLayer} />
+          </Source>
+        )}
 
         {zones.map((zone) => {
           const isSelected = mode === 'zone' && selectedId === zone.id;
