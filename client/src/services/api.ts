@@ -117,6 +117,14 @@ export const businessesApi = {
     const res = await api.get<{ name: string; count: number }[]>('/businesses/meta/categories');
     return res.data;
   },
+
+  updatePosition: async (id: string, latitude: number, longitude: number) => {
+    const res = await api.patch<{ id: string; latitude: number; longitude: number }>(
+      `/businesses/${id}/position`,
+      { latitude, longitude }
+    );
+    return res.data;
+  },
 };
 
 // Check-ins API
@@ -137,6 +145,16 @@ export const checkinsApi = {
         captured: boolean;
       };
     }>('/checkins', data);
+    return res.data;
+  },
+
+  undo: async (data: { businessId: string }) => {
+    const res = await api.post<{
+      removedCheckinId: string;
+      pointsRemoved: number;
+      zoneCaptureRemoved: boolean;
+      neighborhoodCaptureRemoved: boolean;
+    }>('/checkins/undo', data);
     return res.data;
   },
 
@@ -178,6 +196,16 @@ export const zonesApi = {
 
   getLeaderboard: async () => {
     const res = await api.get<LeaderboardEntry[]>('/zones/stats/leaderboard');
+    return res.data;
+  },
+
+  updateBoundary: async (id: string, coordinates: [number, number][]) => {
+    const res = await api.patch<{ id: string }>(`/zones/${id}/boundary`, { coordinates });
+    return res.data;
+  },
+
+  updateNeighborhoodBoundary: async (id: string, coordinates: [number, number][]) => {
+    const res = await api.patch<{ id: string }>(`/zones/neighborhoods/${id}/boundary`, { coordinates });
     return res.data;
   },
 };

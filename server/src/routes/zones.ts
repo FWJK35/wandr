@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
-import { query, queryOne } from '../db/index.js';
-import { optionalAuth, AuthRequest } from '../middleware/auth.js';
+import { query, queryOne, execute } from '../db/index.js';
+import { optionalAuth, authenticate, AuthRequest } from '../middleware/auth.js';
 
 export const zonesRouter = Router();
 
@@ -25,6 +25,78 @@ function parseBoundaryCoords(coords: any): [number, number][] {
   }
   return coords;
 }
+
+function normalizeBoundaryCoords(coords: any): [number, number][] | null {
+  if (!Array.isArray(coords) || coords.length < 3) return null;
+  const normalized: [number, number][] = [];
+  for (const point of coords) {
+    if (!Array.isArray(point) || point.length < 2) return null;
+    const lng = Number(point[0]);
+    const lat = Number(point[1]);
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+    normalized.push([lng, lat]);
+  }
+  const first = normalized[0];
+  const last = normalized[normalized.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) {
+    normalized.push([first[0], first[1]]);
+  }
+  return normalized;
+}
+
+// PATCH /api/zones/neighborhoods/:id/boundary - Update neighborhood boundary
+zonesRouter.patch('/neighborhoods/:id/boundary', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { coordinates } = req.body;
+    const normalized = normalizeBoundaryCoords(coordinates);
+
+    if (!normalized) {
+      return res.status(400).json({ error: 'coordinates must be an array of [lng, lat] values' });
+    }
+
+    const updated = await execute(
+      'UPDATE neighborhoods SET boundary_coords = $1 WHERE id = $2',
+      [JSON.stringify(normalized), id]
+    );
+
+    if (updated === 0) {
+      return res.status(404).json({ error: 'Neighborhood not found' });
+    }
+
+    res.json({ id });
+  } catch (error) {
+    console.error('Update neighborhood boundary error:', error);
+    res.status(500).json({ error: 'Failed to update neighborhood boundary' });
+  }
+});
+
+// PATCH /api/zones/:id/boundary - Update zone boundary
+zonesRouter.patch('/:id/boundary', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { coordinates } = req.body;
+    const normalized = normalizeBoundaryCoords(coordinates);
+
+    if (!normalized) {
+      return res.status(400).json({ error: 'coordinates must be an array of [lng, lat] values' });
+    }
+
+    const updated = await execute(
+      'UPDATE zones SET boundary_coords = $1 WHERE id = $2',
+      [JSON.stringify(normalized), id]
+    );
+
+    if (updated === 0) {
+      return res.status(404).json({ error: 'Zone not found' });
+    }
+
+    res.json({ id });
+  } catch (error) {
+    console.error('Update zone boundary error:', error);
+    res.status(500).json({ error: 'Failed to update zone boundary' });
+  }
+});
 
 // GET /api/zones/neighborhoods - Get all neighborhoods with progress
 // NOTE: Must come BEFORE /:id route

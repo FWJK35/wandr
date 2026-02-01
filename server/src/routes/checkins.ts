@@ -38,6 +38,53 @@ function pointInPolygon(lng: number, lat: number, polygon: [number, number][]): 
   return inside;
 }
 
+// Helper to safely parse boundary_coords (handles both string and object)
+function parseBoundaryCoords(coords: any): [number, number][] {
+  if (typeof coords === 'string') {
+    return JSON.parse(coords);
+  }
+  return coords;
+}
+
+async function findZoneForPoint(lat: number, lng: number): Promise<{
+  id: string;
+  name: string;
+  neighborhood_id: string | null;
+  coords: [number, number][];
+} | null> {
+  const zones = await query<{
+    id: string;
+    name: string;
+    neighborhood_id: string | null;
+    boundary_coords: any;
+  }>('SELECT id, name, neighborhood_id, boundary_coords FROM zones');
+
+  for (const zone of zones) {
+    const coords = parseBoundaryCoords(zone.boundary_coords);
+    if (pointInPolygon(lng, lat, coords)) {
+      return {
+        id: zone.id,
+        name: zone.name,
+        neighborhood_id: zone.neighborhood_id,
+        coords,
+      };
+    }
+  }
+  return null;
+}
+
+async function getBusinessIdsInZone(coords: [number, number][]): Promise<string[]> {
+  const businesses = await query<{
+    id: string;
+    latitude: number;
+    longitude: number;
+  }>('SELECT id, latitude, longitude FROM businesses');
+
+  return businesses
+    .filter((b) => pointInPolygon(b.longitude, b.latitude, coords))
+    .map((b) => b.id);
+}
+
 // POST /api/checkins - Create a check-in
 checkinsRouter.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
@@ -191,6 +238,159 @@ checkinsRouter.post('/', authenticate, async (req: AuthRequest, res: Response) =
   }
 });
 
+// POST /api/checkins/undo - Remove the most recent check-in for a business
+checkinsRouter.post('/undo', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { businessId } = req.body;
+    const userId = req.user!.id;
+
+    if (!businessId) {
+      return res.status(400).json({ error: 'businessId is required' });
+    }
+
+    const checkin = await queryOne<{
+      id: string;
+      points_earned: number;
+    }>(
+      `SELECT id, points_earned
+       FROM check_ins
+       WHERE user_id = $1 AND business_id = $2
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [userId, businessId]
+    );
+
+    if (!checkin) {
+      return res.status(404).json({ error: 'No check-in found to undo' });
+    }
+
+    const business = await queryOne<{ latitude: number; longitude: number }>(
+      'SELECT latitude, longitude FROM businesses WHERE id = $1',
+      [businessId]
+    );
+
+    if (!business) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
+
+    const matchedZone = await findZoneForPoint(business.latitude, business.longitude);
+
+    let wasZoneCaptured = false;
+    let wasNeighborhoodCaptured = false;
+
+    if (matchedZone) {
+      const zoneProgress = await queryOne<{ captured: boolean }>(
+        'SELECT captured FROM zone_progress WHERE user_id = $1 AND zone_id = $2',
+        [userId, matchedZone.id]
+      );
+      wasZoneCaptured = !!zoneProgress?.captured;
+
+      if (matchedZone.neighborhood_id) {
+        const neighborhoodProgress = await queryOne<{ fully_captured: boolean }>(
+          'SELECT fully_captured FROM neighborhood_progress WHERE user_id = $1 AND neighborhood_id = $2',
+          [userId, matchedZone.neighborhood_id]
+        );
+        wasNeighborhoodCaptured = !!neighborhoodProgress?.fully_captured;
+      }
+    }
+
+    await query('DELETE FROM check_ins WHERE id = $1', [checkin.id]);
+
+    let nowZoneCaptured = false;
+    let nowNeighborhoodCaptured = false;
+
+    if (matchedZone) {
+      const businessIdsInZone = await getBusinessIdsInZone(matchedZone.coords);
+      if (businessIdsInZone.length > 0) {
+        const [remaining] = await query<{ count: string }>(
+          `SELECT COUNT(*) as count
+           FROM check_ins
+           WHERE user_id = $1 AND business_id = ANY($2::uuid[])`,
+          [userId, businessIdsInZone]
+        );
+        nowZoneCaptured = parseInt(remaining?.count || '0') > 0;
+      }
+
+      if (nowZoneCaptured) {
+        await query(
+          `INSERT INTO zone_progress (user_id, zone_id, captured, captured_at)
+           VALUES ($1, $2, true, NOW())
+           ON CONFLICT (user_id, zone_id)
+           DO UPDATE SET captured = true, captured_at = COALESCE(zone_progress.captured_at, NOW())`,
+          [userId, matchedZone.id]
+        );
+      } else {
+        await query(
+          `UPDATE zone_progress
+           SET captured = false, captured_at = NULL
+           WHERE user_id = $1 AND zone_id = $2`,
+          [userId, matchedZone.id]
+        );
+      }
+
+      if (matchedZone.neighborhood_id) {
+        const [totalResult] = await query<{ count: string }>(
+          'SELECT COUNT(*) as count FROM zones WHERE neighborhood_id = $1',
+          [matchedZone.neighborhood_id]
+        );
+        const totalZones = parseInt(totalResult?.count || '0');
+
+        const [capturedResult] = await query<{ count: string }>(
+          `SELECT COUNT(*) as count
+           FROM zone_progress zp
+           JOIN zones z ON z.id = zp.zone_id
+           WHERE zp.user_id = $1 AND z.neighborhood_id = $2 AND zp.captured = true`,
+          [userId, matchedZone.neighborhood_id]
+        );
+        const capturedZones = parseInt(capturedResult?.count || '0');
+
+        nowNeighborhoodCaptured = totalZones > 0 && capturedZones >= totalZones;
+
+        await query(
+          `INSERT INTO neighborhood_progress (user_id, neighborhood_id, zones_captured, total_zones, fully_captured, captured_at)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (user_id, neighborhood_id)
+           DO UPDATE SET zones_captured = $3, total_zones = $4, fully_captured = $5,
+                         captured_at = CASE WHEN $5 THEN COALESCE(neighborhood_progress.captured_at, NOW()) ELSE NULL END`,
+          [
+            userId,
+            matchedZone.neighborhood_id,
+            capturedZones,
+            totalZones,
+            nowNeighborhoodCaptured,
+            nowNeighborhoodCaptured ? new Date() : null,
+          ]
+        );
+      }
+    }
+
+    let pointsRemoved = checkin.points_earned;
+    if (wasZoneCaptured && !nowZoneCaptured) {
+      pointsRemoved += ZONE_CAPTURE_POINTS;
+    }
+    if (wasNeighborhoodCaptured && !nowNeighborhoodCaptured) {
+      pointsRemoved += NEIGHBORHOOD_CAPTURE_POINTS;
+    }
+
+    if (pointsRemoved > 0) {
+      await query(
+        'UPDATE users SET points = GREATEST(points - $1, 0) WHERE id = $2',
+        [pointsRemoved, userId]
+      );
+    }
+
+    res.json({
+      removedCheckinId: checkin.id,
+      pointsRemoved,
+      zoneCaptureRemoved: wasZoneCaptured && !nowZoneCaptured,
+      neighborhoodCaptureRemoved: wasNeighborhoodCaptured && !nowNeighborhoodCaptured,
+    });
+  } catch (error) {
+    console.error('Undo check-in error:', error);
+    res.status(500).json({ error: 'Undo check-in failed' });
+  }
+});
+
 // GET /api/checkins/history - Get user's check-in history
 checkinsRouter.get('/history', authenticate, async (req: AuthRequest, res: Response) => {
   try {
@@ -331,7 +531,7 @@ async function checkAndUpdateZoneCapture(userId: string, businessLat: number, bu
     id: string;
     name: string;
     neighborhood_id: string | null;
-    boundary_coords: string;
+    boundary_coords: any;
   }>(
     'SELECT id, name, neighborhood_id, boundary_coords FROM zones'
   );
@@ -340,7 +540,7 @@ async function checkAndUpdateZoneCapture(userId: string, businessLat: number, bu
   let matchedZone: { id: string; name: string; neighborhood_id: string | null } | null = null;
 
   for (const zone of zones) {
-    const coords = JSON.parse(zone.boundary_coords) as [number, number][];
+    const coords = parseBoundaryCoords(zone.boundary_coords);
     if (pointInPolygon(businessLng, businessLat, coords)) {
       matchedZone = zone;
       break;

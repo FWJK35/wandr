@@ -10,6 +10,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import BusinessDashboard from './pages/business/Dashboard';
 import Layout from './components/shared/Layout';
+import GeometryEditor from './pages/tools/GeometryEditor';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -52,6 +53,7 @@ function App() {
         <Route path="rewards" element={<Rewards />} />
         <Route path="profile" element={<Profile />} />
         <Route path="profile/:userId" element={<Profile />} />
+        <Route path="tools/geometry" element={<GeometryEditor />} />
       </Route>
 
       {/* Business dashboard */}

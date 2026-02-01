@@ -11,10 +11,37 @@ interface UseLocationResult {
   error: string | null;
   loading: boolean;
   refresh: () => void;
+  spoofed: boolean;
+  setSpoofLocation: (location: { latitude: number; longitude: number; accuracy?: number }) => void;
+  clearSpoofLocation: () => void;
 }
 
 export function useLocation(watchPosition = false): UseLocationResult {
+  const storageKey = 'wandr_spoof_location';
+  const readStoredSpoof = (): Location | null => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (
+        typeof parsed?.latitude !== 'number' ||
+        typeof parsed?.longitude !== 'number'
+      ) {
+        return null;
+      }
+      return {
+        latitude: parsed.latitude,
+        longitude: parsed.longitude,
+        accuracy: typeof parsed.accuracy === 'number' ? parsed.accuracy : 5,
+      };
+    } catch {
+      return null;
+    }
+  };
+
   const [location, setLocation] = useState<Location | null>(null);
+  const [spoofedLocation, setSpoofedLocation] = useState<Location | null>(() => readStoredSpoof());
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -49,6 +76,12 @@ export function useLocation(watchPosition = false): UseLocationResult {
     setLoading(true);
     setError(null);
 
+    if (spoofedLocation) {
+      setLocation(spoofedLocation);
+      setLoading(false);
+      return;
+    }
+
     if (!navigator.geolocation) {
       setError('Geolocation is not supported by your browser');
       setLoading(false);
@@ -60,9 +93,16 @@ export function useLocation(watchPosition = false): UseLocationResult {
       timeout: 10000,
       maximumAge: 0,
     });
-  }, [handleSuccess, handleError]);
+  }, [handleSuccess, handleError, spoofedLocation]);
 
   useEffect(() => {
+    if (spoofedLocation) {
+      setLocation(spoofedLocation);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
     if (!navigator.geolocation) {
       setError('Geolocation is not supported by your browser');
       setLoading(false);
@@ -91,9 +131,47 @@ export function useLocation(watchPosition = false): UseLocationResult {
         navigator.geolocation.clearWatch(watchId);
       }
     };
-  }, [watchPosition, handleSuccess, handleError]);
+  }, [watchPosition, handleSuccess, handleError, spoofedLocation]);
 
-  return { location, error, loading, refresh };
+  const setSpoofLocation = useCallback((next: { latitude: number; longitude: number; accuracy?: number }) => {
+    const normalized: Location = {
+      latitude: next.latitude,
+      longitude: next.longitude,
+      accuracy: typeof next.accuracy === 'number' ? next.accuracy : 5,
+    };
+    setSpoofedLocation(normalized);
+    setLocation(normalized);
+    setError(null);
+    setLoading(false);
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(storageKey, JSON.stringify(normalized));
+      } catch {
+        // ignore storage errors
+      }
+    }
+  }, []);
+
+  const clearSpoofLocation = useCallback(() => {
+    setSpoofedLocation(null);
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.removeItem(storageKey);
+      } catch {
+        // ignore storage errors
+      }
+    }
+  }, []);
+
+  return {
+    location,
+    error,
+    loading,
+    refresh,
+    spoofed: !!spoofedLocation,
+    setSpoofLocation,
+    clearSpoofLocation,
+  };
 }
 
 export function calculateDistance(

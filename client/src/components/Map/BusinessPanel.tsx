@@ -9,16 +9,18 @@ import LoadingSpinner from '../shared/LoadingSpinner';
 interface BusinessPanelProps {
   business: Business;
   userLocation: { latitude: number; longitude: number } | null;
+  onCheckInComplete?: () => void;
   onClose: () => void;
 }
 
 const CHECKIN_RADIUS = 50; // meters
 
-export default function BusinessPanel({ business, userLocation, onClose }: BusinessPanelProps) {
-  const { updateUser } = useAuth();
+export default function BusinessPanel({ business, userLocation, onCheckInComplete, onClose }: BusinessPanelProps) {
+  const { updateUser, user } = useAuth();
   const [details, setDetails] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [checkingIn, setCheckingIn] = useState(false);
+  const [undoing, setUndoing] = useState(false);
   const [checkinResult, setCheckinResult] = useState<{
     points: PointsBreakdown;
     isFirstVisit: boolean;
@@ -45,17 +47,18 @@ export default function BusinessPanel({ business, userLocation, onClose }: Busin
 
   const canCheckIn = distance !== null && distance <= CHECKIN_RADIUS;
 
-  useEffect(() => {
-    async function fetchDetails() {
-      try {
-        const data = await businessesApi.getById(business.id);
-        setDetails(data);
-      } catch (err) {
-        console.error('Failed to fetch business details:', err);
-      } finally {
-        setLoading(false);
-      }
+  const fetchDetails = async () => {
+    try {
+      const data = await businessesApi.getById(business.id);
+      setDetails(data);
+    } catch (err) {
+      console.error('Failed to fetch business details:', err);
+    } finally {
+      setLoading(false);
     }
+  };
+
+  useEffect(() => {
     fetchDetails();
   }, [business.id]);
 
@@ -73,11 +76,33 @@ export default function BusinessPanel({ business, userLocation, onClose }: Busin
       });
 
       setCheckinResult(result);
-      updateUser({ points: (prev: number) => prev + result.points.total } as any);
+      if (user) {
+        updateUser({ points: user.points + result.points.total });
+      }
+      await fetchDetails();
+      onCheckInComplete?.();
     } catch (err: any) {
       setError(err.response?.data?.error || 'Check-in failed');
     } finally {
       setCheckingIn(false);
+    }
+  };
+
+  const handleUndoCheckIn = async () => {
+    setUndoing(true);
+    setError(null);
+    try {
+      const result = await checkinsApi.undo({ businessId: business.id });
+      if (user) {
+        updateUser({ points: Math.max(user.points - result.pointsRemoved, 0) });
+      }
+      setCheckinResult(null);
+      await fetchDetails();
+      onCheckInComplete?.();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Undo check-in failed');
+    } finally {
+      setUndoing(false);
     }
   };
 
@@ -231,26 +256,46 @@ export default function BusinessPanel({ business, userLocation, onClose }: Busin
             </>
           )}
 
-          {/* Check-in button */}
-          {!checkinResult && (
-            <Button
-              onClick={handleCheckIn}
-              loading={checkingIn}
-              disabled={!canCheckIn}
-              className="w-full"
-              size="lg"
-            >
-              {!canCheckIn
-                ? `Get within ${CHECKIN_RADIUS}m to check in`
-                : 'Check In'
-              }
-            </Button>
-          )}
-
-          {checkinResult && (
-            <Button onClick={onClose} variant="secondary" className="w-full" size="lg">
-              Close
-            </Button>
+          {/* Check-in actions */}
+          {!checkinResult ? (
+            <div className="space-y-2">
+              <Button
+                onClick={handleCheckIn}
+                loading={checkingIn}
+                disabled={!canCheckIn}
+                className="w-full"
+                size="lg"
+              >
+                {!canCheckIn
+                  ? `Get within ${CHECKIN_RADIUS}m to check in`
+                  : 'Check In'
+                }
+              </Button>
+              {details?.visited && (
+                <Button
+                  onClick={handleUndoCheckIn}
+                  loading={undoing}
+                  variant="ghost"
+                  className="w-full"
+                >
+                  Undo Last Check-in
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Button
+                onClick={handleUndoCheckIn}
+                loading={undoing}
+                variant="ghost"
+                className="w-full"
+              >
+                Undo Check-in
+              </Button>
+              <Button onClick={onClose} variant="secondary" className="w-full" size="lg">
+                Close
+              </Button>
+            </div>
           )}
         </div>
       </div>

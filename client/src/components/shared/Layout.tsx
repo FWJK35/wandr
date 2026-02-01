@@ -6,7 +6,8 @@ const navItems = [
   { path: '/explore', icon: '🔍', label: 'Explore' },
   { path: '/quests', icon: '🎯', label: 'Quests' },
   { path: '/feed', icon: '📱', label: 'Feed' },
-  { path: '/profile', icon: '👤', label: 'Profile' },
+  { path: '/profile', icon: '👤', label: 'Profile' },
+  { path: '/tools/geometry', icon: 'E', label: 'Edit' },
 ];
 
 export default function Layout() {
@@ -63,3 +64,4 @@ export default function Layout() {
     </div>
   );
 }
+

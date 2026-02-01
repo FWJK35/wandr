@@ -24,7 +24,14 @@ type MapMode = 'explore' | 'territory';
 
 export default function GameMap() {
   const mapRef = useRef<MapRef>(null);
-  const { location, error: locationError } = useLocation(true);
+  const {
+    location,
+    error: locationError,
+    spoofed,
+    setSpoofLocation,
+    clearSpoofLocation,
+    refresh,
+  } = useLocation(true);
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
   const [neighborhoods, setNeighborhoods] = useState<Neighborhood[]>([]);
@@ -33,6 +40,10 @@ export default function GameMap() {
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapMode, setMapMode] = useState<MapMode>('explore');
   const lastFetchRef = useRef<{ lat: number; lng: number } | null>(null);
+  const [spoofOpen, setSpoofOpen] = useState(false);
+  const [spoofLat, setSpoofLat] = useState('');
+  const [spoofLng, setSpoofLng] = useState('');
+  const [spoofError, setSpoofError] = useState<string | null>(null);
 
   const [viewState, setViewState] = useState({
     latitude: defaultCenter.lat,
@@ -53,8 +64,15 @@ export default function GameMap() {
     }
   }, [location]);
 
-  const fetchData = useCallback(async (lat: number, lng: number) => {
-    if (lastFetchRef.current) {
+  useEffect(() => {
+    if (location && !spoofLat && !spoofLng) {
+      setSpoofLat(location.latitude.toFixed(6));
+      setSpoofLng(location.longitude.toFixed(6));
+    }
+  }, [location, spoofLat, spoofLng]);
+
+  const fetchData = useCallback(async (lat: number, lng: number, force = false) => {
+    if (!force && lastFetchRef.current) {
       const dist = Math.sqrt(
         Math.pow(lat - lastFetchRef.current.lat, 2) +
         Math.pow(lng - lastFetchRef.current.lng, 2)
@@ -147,6 +165,45 @@ export default function GameMap() {
     setSelectedBusiness(null);
   };
 
+  const applySpoof = useCallback((lat: number, lng: number) => {
+    setSpoofLocation({ latitude: lat, longitude: lng, accuracy: 5 });
+    lastFetchRef.current = null;
+    setViewState(prev => ({
+      ...prev,
+      latitude: lat,
+      longitude: lng,
+    }));
+    fetchData(lat, lng, true);
+  }, [fetchData, setSpoofLocation]);
+
+  const handleApplySpoof = () => {
+    const lat = parseFloat(spoofLat);
+    const lng = parseFloat(spoofLng);
+    if (Number.isNaN(lat) || Number.isNaN(lng)) {
+      setSpoofError('Enter valid latitude/longitude values');
+      return;
+    }
+    setSpoofError(null);
+    applySpoof(lat, lng);
+  };
+
+  const handleUseMapCenter = () => {
+    const center = mapRef.current?.getMap()?.getCenter();
+    if (!center) return;
+    const lat = Number(center.lat.toFixed(6));
+    const lng = Number(center.lng.toFixed(6));
+    setSpoofLat(lat.toFixed(6));
+    setSpoofLng(lng.toFixed(6));
+    setSpoofError(null);
+  };
+
+  const handleClearSpoof = () => {
+    clearSpoofLocation();
+    setSpoofError(null);
+    lastFetchRef.current = null;
+    refresh();
+  };
+
   if (!MAPBOX_TOKEN) {
     return (
       <div className="h-full flex items-center justify-center bg-dark-300">
@@ -206,8 +263,8 @@ export default function GameMap() {
         )}
       </Map>
 
-      {/* Mode toggle button */}
-      <div className="absolute top-4 left-4 z-10">
+            {/* Mode toggle + testing tools */}
+      <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
         <button
           onClick={toggleMode}
           className={`
@@ -229,6 +286,67 @@ export default function GameMap() {
             </span>
           )}
         </button>
+
+        <button
+          onClick={() => setSpoofOpen(prev => !prev)}
+          className={`px-4 py-2 rounded-xl font-medium text-sm transition-all shadow-lg hover:scale-105 ${
+            spoofed ? 'bg-amber-500 text-white' : 'bg-white/10 text-gray-200'
+          }`}
+        >
+          {spoofed ? 'Spoofing Location' : 'Test Location'}
+        </button>
+
+        {spoofOpen && (
+          <div className="glass rounded-xl p-3 w-64 text-xs text-gray-200">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] uppercase tracking-wide text-gray-400">Manual Location</span>
+              {spoofed && <span className="text-emerald-400 text-[11px]">Active</span>}
+            </div>
+            <div className="space-y-2">
+              <div>
+                <label className="block text-gray-400 mb-1">Latitude</label>
+                <input
+                  value={spoofLat}
+                  onChange={(e) => setSpoofLat(e.target.value)}
+                  className="w-full rounded-lg bg-black/30 border border-white/10 px-2 py-1 text-sm text-white"
+                  placeholder="41.826800"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-400 mb-1">Longitude</label>
+                <input
+                  value={spoofLng}
+                  onChange={(e) => setSpoofLng(e.target.value)}
+                  className="w-full rounded-lg bg-black/30 border border-white/10 px-2 py-1 text-sm text-white"
+                  placeholder="-71.402500"
+                />
+              </div>
+              {spoofError && (
+                <div className="text-red-400 text-[11px]">{spoofError}</div>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleUseMapCenter}
+                  className="flex-1 rounded-lg bg-white/10 hover:bg-white/20 px-2 py-1 text-[11px]"
+                >
+                  Use Map Center
+                </button>
+                <button
+                  onClick={handleApplySpoof}
+                  className="flex-1 rounded-lg bg-emerald-500/80 hover:bg-emerald-500 px-2 py-1 text-[11px] text-white"
+                >
+                  Apply
+                </button>
+              </div>
+              <button
+                onClick={handleClearSpoof}
+                className="w-full rounded-lg bg-white/10 hover:bg-white/20 px-2 py-1 text-[11px]"
+              >
+                Clear Spoof
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Stats bar */}
@@ -282,6 +400,11 @@ export default function GameMap() {
         <BusinessPanel
           business={selectedBusiness}
           userLocation={location}
+          onCheckInComplete={() => {
+            if (location) {
+              fetchData(location.latitude, location.longitude, true);
+            }
+          }}
           onClose={() => setSelectedBusiness(null)}
         />
       )}
@@ -296,3 +419,4 @@ export default function GameMap() {
     </div>
   );
 }
+

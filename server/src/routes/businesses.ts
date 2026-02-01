@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
-import { query, queryOne } from '../db/index.js';
-import { optionalAuth, AuthRequest } from '../middleware/auth.js';
+import { query, queryOne, execute } from '../db/index.js';
+import { optionalAuth, authenticate, AuthRequest } from '../middleware/auth.js';
 
 export const businessesRouter = Router();
 
@@ -101,6 +101,34 @@ businessesRouter.get('/', optionalAuth, async (req: AuthRequest, res: Response) 
   } catch (error) {
     console.error('Get businesses error:', error);
     res.status(500).json({ error: 'Failed to get businesses' });
+  }
+});
+
+// PATCH /api/businesses/:id/position - Update business location
+businessesRouter.patch('/:id/position', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { latitude, longitude } = req.body;
+
+    if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+      return res.status(400).json({ error: 'latitude and longitude are required' });
+    }
+
+    const updated = await execute(
+      `UPDATE businesses
+       SET latitude = $1, longitude = $2, updated_at = NOW()
+       WHERE id = $3`,
+      [latitude, longitude, id]
+    );
+
+    if (updated === 0) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
+
+    res.json({ id, latitude, longitude });
+  } catch (error) {
+    console.error('Update business position error:', error);
+    res.status(500).json({ error: 'Failed to update business position' });
   }
 });
 
