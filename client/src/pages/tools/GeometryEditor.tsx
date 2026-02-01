@@ -351,32 +351,77 @@ export default function GeometryEditor() {
     }
   }, [selectedNeighborhood?.id]);
 
-  const updateBusinessPosition = (id: string, latitude: number, longitude: number) => {
+  const persistBusinessPosition = useCallback(async (id: string, latitude: number, longitude: number) => {
+    try {
+      await businessesApi.updatePosition(id, latitude, longitude);
+      setDirtyBusinesses(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    } catch (err) {
+      console.error('Failed to save business position:', err);
+      setStatus({ type: 'error', message: 'Failed to save business position' });
+    }
+  }, []);
+
+  const persistZoneCoords = useCallback(async (id: string, coords: [number, number][]) => {
+    try {
+      await zonesApi.updateBoundary(id, coords);
+      setDirtyZones(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    } catch (err) {
+      console.error('Failed to save zone boundary:', err);
+      setStatus({ type: 'error', message: 'Failed to save zone boundary' });
+    }
+  }, []);
+
+  const persistNeighborhoodCoords = useCallback(async (id: string, coords: [number, number][]) => {
+    try {
+      await zonesApi.updateNeighborhoodBoundary(id, coords);
+      setDirtyNeighborhoods(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    } catch (err) {
+      console.error('Failed to save neighborhood boundary:', err);
+      setStatus({ type: 'error', message: 'Failed to save neighborhood boundary' });
+    }
+  }, []);
+
+  const updateBusinessPosition = useCallback((id: string, latitude: number, longitude: number) => {
     setBusinesses(prev => prev.map(b => (b.id === id ? { ...b, latitude, longitude } : b)));
     setDirtyBusinesses(prev => {
       const next = new Set(prev);
       next.add(id);
       return next;
     });
-  };
+    void persistBusinessPosition(id, latitude, longitude);
+  }, [persistBusinessPosition]);
 
-  const updateZoneCoords = (id: string, coords: [number, number][]) => {
+  const updateZoneCoords = useCallback((id: string, coords: [number, number][]) => {
     setZones(prev => prev.map(z => (z.id === id ? { ...z, coords } : z)));
     setDirtyZones(prev => {
       const next = new Set(prev);
       next.add(id);
       return next;
     });
-  };
+    void persistZoneCoords(id, coords);
+  }, [persistZoneCoords]);
 
-  const updateNeighborhoodCoords = (id: string, coords: [number, number][]) => {
+  const updateNeighborhoodCoords = useCallback((id: string, coords: [number, number][]) => {
     setNeighborhoods(prev => prev.map(n => (n.id === id ? { ...n, coords } : n)));
     setDirtyNeighborhoods(prev => {
       const next = new Set(prev);
       next.add(id);
       return next;
     });
-  };
+    void persistNeighborhoodCoords(id, coords);
+  }, [persistNeighborhoodCoords]);
 
   const focusMap = useCallback((lng: number, lat: number) => {
     const map = mapRef.current?.getMap();
