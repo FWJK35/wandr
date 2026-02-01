@@ -322,7 +322,29 @@ const migrations = [
   );`,
 
   `CREATE INDEX IF NOT EXISTS idx_redemptions_user ON redemptions(user_id);`,
-  `CREATE INDEX IF NOT EXISTS idx_redemptions_code ON redemptions(redemption_code);`
+  `CREATE INDEX IF NOT EXISTS idx_redemptions_code ON redemptions(redemption_code);`,
+
+  // Dynamic quest flags (AI-generated)
+  `ALTER TABLE quests ADD COLUMN IF NOT EXISTS generated_for_user UUID;`,
+  `ALTER TABLE quests ADD COLUMN IF NOT EXISTS is_dynamic BOOLEAN DEFAULT FALSE;`,
+
+  // Payments (mock Stripe)
+  `CREATE TABLE IF NOT EXISTS payments (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    business_id UUID REFERENCES businesses(id) ON DELETE SET NULL,
+    amount_cents INTEGER NOT NULL,
+    currency VARCHAR(10) DEFAULT 'usd',
+    description TEXT,
+    provider_session_id VARCHAR(100) UNIQUE NOT NULL,
+    status VARCHAR(30) DEFAULT 'created',
+    receipt_url TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    completed_at TIMESTAMP WITH TIME ZONE
+  );`,
+
+  `CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id);`,
+  `CREATE INDEX IF NOT EXISTS idx_payments_business ON payments(business_id);`
 ];
 
 async function runMigrations() {

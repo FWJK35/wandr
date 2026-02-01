@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Routes, Route, NavLink, useParams } from 'react-router-dom';
-import api from '../../services/api';
+import api, { paymentsApi } from '../../services/api';
 import Card from '../../components/shared/Card';
 import Button from '../../components/shared/Button';
 import LoadingSpinner from '../../components/shared/LoadingSpinner';
@@ -101,6 +101,8 @@ function BusinessDetail() {
   const [promotions, setPromotions] = useState<any[]>([]);
   const [challenges, setChallenges] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [boosting, setBoosting] = useState(false);
+  const [boostMessage, setBoostMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -125,6 +127,29 @@ function BusinessDetail() {
       console.error('Failed to fetch data:', err);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleBoost() {
+    if (!businessId) return;
+    setBoosting(true);
+    setBoostMessage(null);
+    try {
+      const checkout = await paymentsApi.createCheckout({
+        businessId,
+        amountCents: 2000,
+        description: '7-day visibility boost',
+        enforceOwner: true
+      });
+
+      // In demo mode, immediately mark as paid and activate boost
+      await paymentsApi.completeMock(checkout.sessionId, true);
+      await fetchData();
+      setBoostMessage('Boost activated! Expires in 7 days.');
+    } catch (err: any) {
+      setBoostMessage(err?.response?.data?.error || 'Could not start boost right now.');
+    } finally {
+      setBoosting(false);
     }
   }
 
@@ -167,6 +192,28 @@ function BusinessDetail() {
         <>
           {tab === 'analytics' && analytics && (
             <div className="space-y-6">
+              <Card className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <p className="text-sm text-gray-400">Visibility Boost</p>
+                  <p className="font-semibold text-lg">
+                    {analytics.business?.isBoosted
+                      ? 'Boost is active'
+                      : 'Boost your business for 7 days'}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    {analytics.business?.isBoosted && analytics.business.boostExpiresAt
+                      ? `Expires ${new Date(analytics.business.boostExpiresAt).toLocaleString()}`
+                      : 'Mock Stripe checkout flow for demos'}
+                  </p>
+                  {boostMessage && (
+                    <p className="text-sm text-primary-400 mt-1">{boostMessage}</p>
+                  )}
+                </div>
+                <Button onClick={handleBoost} loading={boosting}>
+                  {analytics.business?.isBoosted ? 'Extend Boost ($20)' : 'Start Boost ($20)'}
+                </Button>
+              </Card>
+
               {/* Summary stats */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <Card className="text-center">

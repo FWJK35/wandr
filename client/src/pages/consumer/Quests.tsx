@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { questsApi } from '../../services/api';
+import { questsApi, paymentsApi } from '../../services/api';
 import type { Quest, GeneratedQuest } from '../../types';
 import Card, { CardHeader } from '../../components/shared/Card';
 import Button from '../../components/shared/Button';
@@ -416,6 +416,27 @@ function renderCountdown(endsAt: string, nowTs: number) {
 function QRModal({ quest, onClose }: { quest: GeneratedQuest; onClose: () => void }) {
   const qrData = encodeURIComponent(`quest:${quest.quest_id}|business:${quest.business_id}|title:${quest.title}`);
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${qrData}`;
+  const [paying, setPaying] = useState(false);
+  const [payStatus, setPayStatus] = useState<string | null>(null);
+
+  const handlePay = async () => {
+    setPaying(true);
+    setPayStatus(null);
+    try {
+      const checkout = await paymentsApi.createCheckout({
+        businessId: quest.business_id || undefined,
+        amountCents: 1500,
+        description: `In-store payment for ${quest.title}`
+      });
+      await paymentsApi.completeMock(checkout.sessionId, false);
+      setPayStatus('Payment successful. Show this confirmation to staff.');
+    } catch (err: any) {
+      setPayStatus(err?.response?.data?.error || 'Payment failed. Try again.');
+    } finally {
+      setPaying(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="glass rounded-2xl p-4 w-80 relative">
@@ -433,7 +454,15 @@ function QRModal({ quest, onClose }: { quest: GeneratedQuest; onClose: () => voi
         <div className="text-xs text-gray-300 mb-2">
           Redeem coupon: {quest.suggested_percent_off ?? 0}%
         </div>
-        <Button className="w-full" onClick={onClose}>Close</Button>
+        <div className="space-y-2 mb-2">
+          <Button className="w-full" onClick={handlePay} loading={paying}>
+            Pay with Stripe (mock)
+          </Button>
+          {payStatus && (
+            <p className="text-xs text-center text-primary-400">{payStatus}</p>
+          )}
+        </div>
+        <Button className="w-full" variant="secondary" onClick={onClose}>Close</Button>
       </div>
     </div>
   );

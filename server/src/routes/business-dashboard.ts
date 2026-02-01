@@ -79,6 +79,16 @@ businessDashboardRouter.get('/:businessId/analytics', authenticate, verifyBusine
       [businessId]
     );
 
+    const biz = await queryOne<{
+      name: string;
+      is_boosted: boolean;
+      boost_expires_at: Date | null;
+      category: string;
+    }>(
+      'SELECT name, category, is_boosted, boost_expires_at FROM businesses WHERE id = $1',
+      [businessId]
+    );
+
     // Daily check-ins
     const dailyCheckins = await query<{
       date: Date;
@@ -139,7 +149,13 @@ businessDashboardRouter.get('/:businessId/analytics', authenticate, verifyBusine
         promotionId: p.promotion_id,
         title: p.title,
         checkinsDuring: parseInt(p.checkins_during)
-      }))
+      })),
+      business: biz ? {
+        name: biz.name,
+        category: biz.category,
+        isBoosted: biz.is_boosted,
+        boostExpiresAt: biz.boost_expires_at
+      } : undefined
     });
   } catch (error) {
     console.error('Get analytics error:', error);

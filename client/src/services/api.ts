@@ -395,4 +395,28 @@ export const rewardsApi = {
   },
 };
 
+// Payments API (mock Stripe)
+export const paymentsApi = {
+  createCheckout: async (params: { businessId?: string; amountCents: number; description?: string; enforceOwner?: boolean }) => {
+    const res = await api.post<{
+      sessionId: string;
+      providerSessionId: string;
+      checkoutUrl: string;
+      clientSecret: string;
+    }>('/payments/checkout', params);
+    return res.data;
+  },
+  completeMock: async (sessionId: string, boostBusiness?: boolean) => {
+    const res = await api.post<{ status: string; receiptUrl: string }>('/payments/mock-complete', {
+      sessionId,
+      boostBusiness
+    });
+    return res.data;
+  },
+  history: async () => {
+    const res = await api.get<any[]>('/payments/history');
+    return res.data;
+  }
+};
+
 export default api;

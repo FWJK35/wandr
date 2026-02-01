@@ -10,6 +10,7 @@ import { questsRouter } from './routes/quests.js';
 import { socialRouter } from './routes/social.js';
 import { rewardsRouter } from './routes/rewards.js';
 import { businessDashboardRouter } from './routes/business-dashboard.js';
+import { paymentsRouter } from './routes/payments.js';
 
 dotenv.config();
 
@@ -38,6 +39,7 @@ app.use('/api/quests', questsRouter);
 app.use('/api/social', socialRouter);
 app.use('/api/rewards', rewardsRouter);
 app.use('/api/business-dashboard', businessDashboardRouter);
+app.use('/api/payments', paymentsRouter);
 
 // Error handling middleware
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
