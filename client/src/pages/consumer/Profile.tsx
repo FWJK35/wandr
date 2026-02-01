@@ -80,13 +80,6 @@ export default function Profile() {
         <h1 className="font-display text-2xl font-bold">{profile.displayName}</h1>
         <p className="text-gray-400">@{profile.username}</p>
 
-        {/* Level badge */}
-        <div className="inline-flex items-center gap-2 mt-3 px-4 py-2 bg-dark-100 rounded-full">
-          <Icon name="level" />
-          <span className="font-semibold">Level {profile.level}</span>
-          <span className="text-primary-400">{profile.points} pts</span>
-        </div>
-
         {userRank > 0 && userRank <= 100 && (
           <p className="text-sm text-gray-400 mt-2">
             Ranked #{userRank} globally
@@ -114,31 +107,6 @@ export default function Profile() {
           </div>
         </Card>
       )}
-
-      {/* Badges */}
-      <div>
-        <h2 className="font-semibold text-lg mb-3">Badges</h2>
-        {badges.length === 0 ? (
-          <Card>
-            <p className="text-gray-400 text-center py-4">No badges earned yet</p>
-          </Card>
-        ) : (
-          <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
-            {badges.map((badge) => (
-              <div
-                key={badge.id}
-                className="aspect-square bg-dark-100 rounded-xl flex flex-col items-center justify-center p-2 border border-white/5"
-                title={badge.description}
-              >
-                <span className="text-2xl mb-1">{badge.iconUrl}</span>
-                <span className="text-xs text-gray-400 text-center truncate w-full">
-                  {badge.name}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
 
       {/* Leaderboard preview */}
       <div>

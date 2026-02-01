@@ -87,18 +87,14 @@ export default function GameMap() {
     return { neighborhoods, totalZones, capturedZones, capturedNeighborhoods, totalNeighborhoods: neighborhoods.length };
   }, [zones]);
 
+  // Keep fill subtle; emphasize boundary color
   const neighborhoodFillLayer: FillLayer = {
     id: 'neighborhood-fill',
     type: 'fill',
     source: 'neighborhoods-geo',
     paint: {
-      'fill-color': [
-        'case',
-        ['boolean', ['get', 'captured'], false],
-        '#22c55e',
-        '#d1d5db'
-      ],
-      'fill-opacity': 0.08
+      'fill-color': '#111827',
+      'fill-opacity': 0.04,
     }
   };
 
@@ -110,11 +106,12 @@ export default function GameMap() {
       'line-color': [
         'case',
         ['boolean', ['get', 'captured'], false],
-        '#86efac',
-        '#9ca3af'
+        '#c084fc', // purple for captured
+        '#c084fc'  // purple for not captured
       ],
-      'line-width': 1.5,
-      'line-opacity': 0.6
+      'line-width': 2.2,
+      'line-opacity': 0.9,
+      'line-blur': 0.15
     }
   };
 
