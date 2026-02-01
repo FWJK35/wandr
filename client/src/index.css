@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -23,7 +25,7 @@ html, body, #root {
 }
 
 body {
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: 'Manrope', system-ui, sans-serif;
   background-color: var(--color-dark-300);
   color: #ffffff;
   -webkit-font-smoothing: antialiased;
@@ -94,6 +96,27 @@ body {
   background: rgba(30, 30, 46, 0.8);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Auth page accents */
+.auth-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-12px);
+  }
+}
+
+.auth-float {
+  animation: float 6s ease-in-out infinite;
 }
 
 /* Button styles */
